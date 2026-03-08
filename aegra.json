@@ -1,0 +1,9 @@
+{
+  "name": "aegra",
+  "dependencies": [
+    "./src"
+  ],
+  "graphs": {
+    "aegra": "./src/aegra/graph.py:graph"
+  }
+}
