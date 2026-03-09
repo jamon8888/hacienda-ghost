@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Request
 from keyshield import ApiKeyService
 from keyshield.api import create_depends_api_key
 from keyshield.hasher.argon2 import Argon2ApiKeyHasher
@@ -18,15 +18,15 @@ path = Path(__file__).parent / "db.sqlite3"
 database_url = os.environ.get("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
 
 repo = InMemoryApiKeyRepository()
-svc = ApiKeyService(repo=repo, hasher=hasher)
+svc_api_keys = ApiKeyService(repo=repo, hasher=hasher)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager to handle application startup and shutdown events."""
     # Startup event
-    await svc.load_dotenv()
-    app.state.svc_api_keys = svc
+    await svc_api_keys.load_dotenv()
+    app.state.svc_api_keys = svc_api_keys
     yield
     # Shutdown event
 
