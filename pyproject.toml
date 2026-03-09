@@ -10,6 +10,8 @@ dependencies = [
     "langchain>=0.3.14",
     "langchain-openai>=0.3.0",
     "langchain-anthropic>=0.3.12",
+    "keyshield[argon2,fastapi]>=2.0.0",
+    "aiosqlite>=0.22.1",
 ]
 
 [build-system]

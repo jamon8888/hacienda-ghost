@@ -3,28 +3,25 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import Annotated
+
+from pydantic import BaseModel, Field
 
 from aegra import prompts
 
 
-@dataclass(kw_only=True)
-class Context:
+class Context(BaseModel):
     """Runtime configuration injected into the graph.
 
     Defaults can be overridden per-request via the LangGraph SDK
     or globally via environment variables.
     """
 
-    system_prompt: str = field(
+    system_prompt: str = Field(
         default=prompts.SYSTEM_PROMPT,
-        metadata={
-            "description": "The system prompt for the agent.",
-        },
+        description="The system prompt for the agent",
     )
-    model: Annotated[str, {"description": "LLM model as 'provider/model'."}] = field(
-        default="openai/gpt-4o-mini",
+    model: str = Field(
+        default="openai/gpt-4o-mini", description="LLM model as 'provider/model'"
     )
 
     def __post_init__(self) -> None:
