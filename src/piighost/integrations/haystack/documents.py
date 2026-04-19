@@ -6,6 +6,7 @@ from typing import Any
 
 from haystack import Document, component
 
+from piighost.classifier.base import AnyClassifier, ClassificationSchema
 from piighost.exceptions import RehydrationError
 from piighost.integrations.haystack._base import run_coroutine_sync
 from piighost.models import Entity
@@ -231,3 +232,57 @@ class PIIGhostRehydrator:
                 continue
             content = content.replace(token, original)
         doc.content = content
+
+
+@component
+class PIIGhostDocumentClassifier:
+    """Classify Documents against named schemas and write labels to meta.
+
+    Runs *before* the anonymizer so the classifier sees real text (it
+    generally works worse on anonymized content).  Writes the result
+    to ``meta[meta_key]`` as a structured ``dict[str, list[str]]`` —
+    **not** JSON-serialized — so LanceDB can index the fields for
+    filter-then-rank queries.
+
+    Args:
+        classifier: An implementation of the ``AnyClassifier`` protocol.
+        schemas: Named classification axes.
+        meta_key: Meta dict key for the result dict. Default ``"labels"``.
+        strict: If ``True``, re-raise errors from the classifier.
+    """
+
+    def __init__(
+        self,
+        classifier: AnyClassifier,
+        schemas: dict[str, ClassificationSchema],
+        meta_key: str = "labels",
+        strict: bool = False,
+    ) -> None:
+        self._classifier = classifier
+        self._schemas = schemas
+        self._meta_key = meta_key
+        self._strict = strict
+
+    @component.output_types(documents=list[Document])
+    async def run_async(self, documents: list[Document]) -> dict[str, list[Document]]:
+        for doc in documents:
+            await self._classify(doc)
+        return {"documents": documents}
+
+    @component.output_types(documents=list[Document])
+    def run(self, documents: list[Document]) -> dict[str, list[Document]]:
+        return run_coroutine_sync(self.run_async(documents=documents))
+
+    async def _classify(self, doc: Document) -> None:
+        content = doc.content
+        if content is None or not content.strip():
+            return
+        try:
+            labels = await self._classifier.classify(content, self._schemas)
+        except Exception as exc:
+            if self._strict:
+                raise
+            logger.error("classification failed for doc %s: %s", doc.id, exc)
+            doc.meta["piighost_classifier_error"] = type(exc).__name__
+            return
+        doc.meta[self._meta_key] = labels
