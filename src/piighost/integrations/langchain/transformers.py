@@ -183,3 +183,72 @@ class PIIGhostDocumentClassifier(BaseDocumentTransformer):
             doc.metadata["classifier_error"] = f"classify_failed:{type(exc).__name__}"
             return
         doc.metadata[self._meta_key] = labels
+
+
+from piighost.exceptions import RehydrationError  # noqa: E402
+
+
+class PIIGhostRehydrator(BaseDocumentTransformer):
+    """Restore original content from the JSON mapping in metadata[meta_key].
+
+    Longest-token-first replacement avoids partial-token collisions.
+    No pipeline dependency — pure meta-driven.
+    """
+
+    def __init__(
+        self,
+        fail_on_missing_mapping: bool = False,
+        meta_key: str = "piighost_mapping",
+    ) -> None:
+        self._fail_on_missing = fail_on_missing_mapping
+        self._meta_key = meta_key
+
+    async def atransform_documents(
+        self, documents: Sequence[Document], **kwargs: Any
+    ) -> Sequence[Document]:
+        for doc in documents:
+            self._rehydrate(doc)
+        return list(documents)
+
+    def transform_documents(
+        self, documents: Sequence[Document], **kwargs: Any
+    ) -> Sequence[Document]:
+        for doc in documents:
+            self._rehydrate(doc)
+        return list(documents)
+
+    def _rehydrate(self, doc: Document) -> None:
+        raw = doc.metadata.get(self._meta_key)
+        if raw is None:
+            if self._fail_on_missing:
+                raise RehydrationError(
+                    f"Document has no mapping in metadata[{self._meta_key!r}]",
+                    doc.page_content or "",
+                )
+            logger.error("doc missing mapping; content unchanged")
+            return
+
+        try:
+            mapping = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            if self._fail_on_missing:
+                raise RehydrationError(
+                    f"Document has malformed mapping: {exc}",
+                    doc.page_content or "",
+                ) from exc
+            logger.error("doc mapping malformed: %s", exc)
+            return
+
+        if not isinstance(mapping, list) or doc.page_content is None:
+            return
+
+        mapping.sort(key=lambda item: len(item.get("token", "")), reverse=True)
+
+        content = doc.page_content
+        for item in mapping:
+            token = item.get("token")
+            original = item.get("original")
+            if not token or original is None:
+                continue
+            content = content.replace(token, original)
+        doc.page_content = content
