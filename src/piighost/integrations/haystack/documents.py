@@ -6,6 +6,7 @@ from typing import Any
 
 from haystack import Document, component
 
+from piighost.exceptions import RehydrationError
 from piighost.integrations.haystack._base import run_coroutine_sync
 from piighost.models import Entity
 from piighost.pipeline.thread import ThreadAnonymizationPipeline
@@ -159,3 +160,74 @@ class PIIGhostQueryAnonymizer:
     @component.output_types(query=str, entities=list[Entity])
     def run(self, query: str, scope: str = "query") -> dict[str, Any]:
         return run_coroutine_sync(self.run_async(query=query, scope=scope))
+
+
+@component
+class PIIGhostRehydrator:
+    """Restore original content of Documents from their meta mapping.
+
+    Reads ``meta[meta_key]`` as JSON, rebuilds the token → original map,
+    and replaces tokens in ``content`` via ``str.replace`` (longest-first
+    to avoid partial-token collisions).  No pipeline dependency — pure
+    meta-driven.
+
+    Args:
+        fail_on_missing_mapping: If ``True``, raise ``RehydrationError``
+            when a document has no mapping or a malformed one.  Default
+            ``False`` — lenient pass-through with ``ERROR`` log.
+        meta_key: Meta dict key that stores the JSON mapping.
+    """
+
+    def __init__(
+        self,
+        fail_on_missing_mapping: bool = False,
+        meta_key: str = "piighost_mapping",
+    ) -> None:
+        self._fail_on_missing = fail_on_missing_mapping
+        self._meta_key = meta_key
+
+    @component.output_types(documents=list[Document])
+    async def run_async(self, documents: list[Document]) -> dict[str, list[Document]]:
+        for doc in documents:
+            self._rehydrate(doc)
+        return {"documents": documents}
+
+    @component.output_types(documents=list[Document])
+    def run(self, documents: list[Document]) -> dict[str, list[Document]]:
+        return run_coroutine_sync(self.run_async(documents=documents))
+
+    def _rehydrate(self, doc: Document) -> None:
+        raw = doc.meta.get(self._meta_key)
+        if raw is None:
+            if self._fail_on_missing:
+                raise RehydrationError(
+                    f"Document {doc.id} has no mapping in meta[{self._meta_key!r}]",
+                    partial_text=doc.content or "",
+                )
+            logger.error("doc %s missing mapping; content unchanged", doc.id)
+            return
+
+        try:
+            mapping = json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            if self._fail_on_missing:
+                raise RehydrationError(
+                    f"Document {doc.id} has malformed mapping: {exc}",
+                    partial_text=doc.content or "",
+                ) from exc
+            logger.error("doc %s mapping malformed: %s", doc.id, exc)
+            return
+
+        if not isinstance(mapping, list) or doc.content is None:
+            return
+
+        mapping.sort(key=lambda item: len(item.get("token", "")), reverse=True)
+
+        content = doc.content
+        for item in mapping:
+            token = item.get("token")
+            original = item.get("original")
+            if not token or original is None:
+                continue
+            content = content.replace(token, original)
+        doc.content = content
