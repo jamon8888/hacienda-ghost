@@ -33,6 +33,10 @@ def test_haystack_presets_are_same_objects() -> None:
     """BC: the Haystack re-export must be the identical dict object."""
     from piighost.integrations.haystack.presets import (
         PRESET_GDPR as HS_GDPR,
+        PRESET_LANGUAGE as HS_LANGUAGE,
+        PRESET_SENSITIVITY as HS_SENSITIVITY,
     )
 
     assert HS_GDPR is PRESET_GDPR
+    assert HS_SENSITIVITY is PRESET_SENSITIVITY
+    assert HS_LANGUAGE is PRESET_LANGUAGE
