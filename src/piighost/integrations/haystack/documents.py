@@ -129,3 +129,33 @@ class PIIGhostDocumentAnonymizer:
         )
         if self._populate_profile:
             doc.meta["piighost_profile"] = json.dumps(_build_profile(entities))
+
+
+@component
+class PIIGhostQueryAnonymizer:
+    """Anonymize a query string to match indexed anonymized content.
+
+    Uses the same ``ThreadAnonymizationPipeline`` as the document
+    anonymizer. Because ``HashPlaceholderFactory`` is deterministic,
+    the same entity produces the same token in a query as in an
+    indexed document — so anonymized queries retrieve anonymized docs
+    correctly.
+
+    **Strict by default:** any error raises. Silent pass-through would
+    leak PII into the downstream embedder and LLM.
+
+    Args:
+        pipeline: A configured ``ThreadAnonymizationPipeline``.
+    """
+
+    def __init__(self, pipeline: ThreadAnonymizationPipeline) -> None:
+        self._pipeline = pipeline
+
+    @component.output_types(query=str, entities=list[Entity])
+    async def run_async(self, query: str, scope: str = "query") -> dict[str, Any]:
+        anonymized, entities = await self._pipeline.anonymize(query, thread_id=scope)
+        return {"query": anonymized, "entities": entities}
+
+    @component.output_types(query=str, entities=list[Entity])
+    def run(self, query: str, scope: str = "query") -> dict[str, Any]:
+        return run_coroutine_sync(self.run_async(query=query, scope=scope))
