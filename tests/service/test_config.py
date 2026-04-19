@@ -51,7 +51,7 @@ placeholder_factory = "counter"
 """,
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="hash"):
+    with pytest.raises(ValueError, match="counter mode is unsupported"):
         ServiceConfig.from_toml(cfg_path)
 
 

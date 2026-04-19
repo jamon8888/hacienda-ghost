@@ -18,7 +18,7 @@ class VaultSection(BaseModel):
     placeholder_factory: Literal["hash"] = "hash"
     audit_log: bool = True
 
-    @field_validator("placeholder_factory")
+    @field_validator("placeholder_factory", mode="before")
     @classmethod
     def _reject_non_hash(cls, v: str) -> str:
         if v != "hash":
