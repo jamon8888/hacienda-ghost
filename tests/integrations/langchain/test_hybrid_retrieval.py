@@ -114,6 +114,18 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline, tmp_path) ->
     qresult = await query_anon.ainvoke("What does the brief say about Alain Dupont?")
     assert "Alain" not in qresult["query"], "query must be anonymized before retrieval"
 
+    # Confirm token identity: the BM25 leg only works if the same
+    # HashPlaceholderFactory produces byte-identical tokens for the
+    # document path and the query path.
+    anon_token = next(
+        (tok for tok in qresult["query"].split() if tok.startswith("<PERSON:")),
+        None,
+    )
+    assert anon_token is not None, "query should contain an anonymized PERSON token"
+    assert any(anon_token in d.page_content for d in anonymized), (
+        "HashPlaceholderFactory must produce the same token for document and query paths"
+    )
+
     hits = await ensemble.ainvoke(qresult["query"])
     rehydrated = await rehydrator.atransform_documents(hits)
 
