@@ -234,6 +234,10 @@ class PIIGhostService:
 
 async def _build_default_detector(config: ServiceConfig) -> _Detector:
     """Load a detector based on config. Deferred import keeps cold start lean."""
+    import os
+
+    if os.environ.get("PIIGHOST_DETECTOR") == "stub":
+        return _StubDetector()
     if config.detector.backend == "gliner2":
         from gliner2 import GLiNER2
 
@@ -244,3 +248,24 @@ async def _build_default_detector(config: ServiceConfig) -> _Detector:
     raise NotImplementedError(
         f"detector backend {config.detector.backend!r} not shipped yet"
     )
+
+
+class _StubDetector:
+    """Deterministic stub used only when ``PIIGHOST_DETECTOR=stub`` (tests/dev)."""
+
+    async def detect(self, text: str) -> list[Detection]:
+        from piighost.models import Detection, Span
+
+        out: list[Detection] = []
+        for needle, label in (("Alice", "PERSON"), ("Paris", "LOC")):
+            idx = text.find(needle)
+            if idx >= 0:
+                out.append(
+                    Detection(
+                        text=needle,
+                        label=label,
+                        position=Span(start_pos=idx, end_pos=idx + len(needle)),
+                        confidence=0.99,
+                    )
+                )
+        return out

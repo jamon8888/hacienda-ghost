@@ -1,16 +1,28 @@
-"""CLI entry point. Commands are registered by later tasks."""
+"""piighost CLI entry point (typer app)."""
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import typer
 
-app = typer.Typer(no_args_is_help=True, add_completion=False, help="piighost — GDPR-compliant PII anonymization CLI")
+from piighost.cli.commands import anonymize as anonymize_cmd
+from piighost.cli.commands import detect as detect_cmd
+from piighost.cli.commands import init as init_cmd
+from piighost.cli.commands import rehydrate as rehydrate_cmd
+
+app = typer.Typer(
+    no_args_is_help=True,
+    add_completion=False,
+    help="piighost — GDPR-compliant PII anonymization CLI",
+)
+
+app.command("init")(init_cmd.run)
+app.command("anonymize")(anonymize_cmd.run)
+app.command("rehydrate")(rehydrate_cmd.run)
+app.command("detect")(detect_cmd.run)
 
 
-@app.command(hidden=True)
-def _placeholder() -> None:
-    """Placeholder command so typer has a valid invocation target.
-
-    Real commands are registered by later Sprint 1 tasks (init, daemon, client).
-    """
-    typer.echo("piighost CLI scaffold — no commands registered yet.")
+def _effective_cwd() -> Path:
+    return Path(os.environ.get("PIIGHOST_CWD", Path.cwd()))
