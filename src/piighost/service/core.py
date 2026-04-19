@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 from pathlib import Path
 from typing import Protocol
@@ -87,7 +88,10 @@ class PIIGhostService:
     async def anonymize(
         self, text: str, *, doc_id: str | None = None
     ) -> AnonymizeResult:
-        doc_id = doc_id or f"anon-{abs(hash(text)) % 10**10}"
+        doc_id = (
+            doc_id
+            or f"anon-{hashlib.sha256(text.encode('utf-8')).hexdigest()[:10]}"
+        )
         try:
             anonymized, entities = await self._pipeline.anonymize(text)
         except Exception as exc:

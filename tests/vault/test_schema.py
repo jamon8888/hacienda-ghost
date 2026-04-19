@@ -14,7 +14,8 @@ def test_creates_all_tables(tmp_path: Path) -> None:
             "SELECT name FROM sqlite_master WHERE type='table'"
         )
     }
-    assert {"entities", "doc_entities", "audit_log", "schema_meta"}.issubset(tables)
+    assert {"entities", "doc_entities", "schema_meta"}.issubset(tables)
+    assert "audit_log" not in tables
     conn.close()
 
 

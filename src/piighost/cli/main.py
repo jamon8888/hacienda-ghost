@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import typer
 
 from piighost.cli.commands import anonymize as anonymize_cmd
@@ -26,7 +23,3 @@ app.command("rehydrate")(rehydrate_cmd.run)
 app.command("detect")(detect_cmd.run)
 app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")
-
-
-def _effective_cwd() -> Path:
-    return Path(os.environ.get("PIIGHOST_CWD", Path.cwd()))

@@ -25,15 +25,6 @@ CREATE TABLE IF NOT EXISTS doc_entities (
     PRIMARY KEY (doc_id, token, start_pos)
 );
 
-CREATE TABLE IF NOT EXISTS audit_log (
-    ts INTEGER NOT NULL,
-    caller_pid INTEGER,
-    caller_kind TEXT,
-    op TEXT NOT NULL,
-    token TEXT,
-    metadata_json TEXT
-);
-
 CREATE TABLE IF NOT EXISTS schema_meta (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     version INTEGER NOT NULL,
@@ -42,7 +33,6 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 
 CREATE INDEX IF NOT EXISTS idx_entities_label ON entities(label);
 CREATE INDEX IF NOT EXISTS idx_doc_entities_doc ON doc_entities(doc_id);
-CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 """
 
 

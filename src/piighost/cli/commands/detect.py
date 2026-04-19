@@ -10,6 +10,7 @@ import typer
 
 from piighost.cli.io_utils import read_input
 from piighost.cli.output import ExitCode, emit_error_line, emit_json_line
+from piighost.daemon.client import DaemonClient
 from piighost.exceptions import VaultNotFound
 from piighost.vault.discovery import find_vault_dir
 
@@ -33,6 +34,13 @@ def run(
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
 
     doc_id, text = read_input(target)
+
+    client = DaemonClient.from_vault(vault_dir)
+    if client is not None:
+        detections = client.call("detect", {"text": text})
+        emit_json_line({"doc_id": doc_id, "detections": detections})
+        return
+
     asyncio.run(_run(vault_dir, doc_id, text))
 
 

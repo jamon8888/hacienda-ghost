@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from piighost.cli.output import ExitCode, emit_error_line, emit_json_line
+from piighost.daemon.client import DaemonClient
 from piighost.exceptions import VaultNotFound
 from piighost.service import PIIGhostService
 from piighost.service.config import ServiceConfig
@@ -46,6 +47,17 @@ def list_cmd(
             exit_code=ExitCode.USER_ERROR,
         )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
+
+    client = DaemonClient.from_vault(vault_dir)
+    if client is not None:
+        page = client.call(
+            "vault_list",
+            {"label": label, "limit": limit, "reveal": reveal},
+        )
+        for entry in page.get("entries", []):
+            emit_json_line(entry)
+        return
+
     asyncio.run(_list(vault_dir, label, limit, reveal))
 
 
@@ -76,6 +88,23 @@ def show_cmd(
             exit_code=ExitCode.USER_ERROR,
         )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
+
+    client = DaemonClient.from_vault(vault_dir)
+    if client is not None:
+        entry = client.call(
+            "vault_show", {"token": token, "reveal": reveal}
+        )
+        if entry is None:
+            emit_error_line(
+                error="TokenNotFound",
+                message=f"no entry for {token}",
+                hint=None,
+                exit_code=ExitCode.USER_ERROR,
+            )
+            raise typer.Exit(code=int(ExitCode.USER_ERROR))
+        emit_json_line(entry)
+        return
+
     asyncio.run(_show(vault_dir, token, reveal))
 
 
@@ -109,6 +138,13 @@ def stats_cmd(vault: Path | None = typer.Option(None, "--vault")) -> None:
             exit_code=ExitCode.USER_ERROR,
         )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
+
+    client = DaemonClient.from_vault(vault_dir)
+    if client is not None:
+        stats = client.call("vault_stats")
+        emit_json_line(stats)
+        return
+
     asyncio.run(_stats(vault_dir))
 
 

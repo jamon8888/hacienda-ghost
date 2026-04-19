@@ -10,6 +10,7 @@ import typer
 
 from piighost.cli.io_utils import read_input
 from piighost.cli.output import ExitCode, emit_error_line, emit_json_line
+from piighost.daemon.client import DaemonClient
 from piighost.exceptions import PIISafetyViolation, VaultNotFound
 from piighost.vault.discovery import find_vault_dir
 
@@ -34,8 +35,29 @@ def run(
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
 
     _, text = read_input(target)
+    strict = not lenient
+
+    client = DaemonClient.from_vault(vault_dir)
+    if client is not None:
+        try:
+            result = client.call(
+                "rehydrate", {"text": text, "strict": strict}
+            )
+        except RuntimeError as exc:
+            if str(exc) == "PIISafetyViolation":
+                emit_error_line(
+                    error="PIISafetyViolation",
+                    message="rehydrate: unknown tokens in strict mode",
+                    hint="Pass --lenient to skip unknown tokens",
+                    exit_code=ExitCode.PII_SAFETY_VIOLATION,
+                )
+                raise typer.Exit(code=int(ExitCode.PII_SAFETY_VIOLATION))
+            raise
+        emit_json_line(result)
+        return
+
     try:
-        asyncio.run(_run(vault_dir, text, strict=not lenient))
+        asyncio.run(_run(vault_dir, text, strict=strict))
     except PIISafetyViolation as exc:
         emit_error_line(
             error="PIISafetyViolation",
