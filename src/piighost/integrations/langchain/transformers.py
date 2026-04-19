@@ -99,7 +99,14 @@ class PIIGhostDocumentAnonymizer(BaseDocumentTransformer):
     def transform_documents(
         self, documents: Sequence[Document], **kwargs: Any
     ) -> Sequence[Document]:
-        return asyncio.run(self.atransform_documents(documents, **kwargs))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.atransform_documents(documents, **kwargs))  # type: ignore[return-value]
+        raise RuntimeError(
+            "PIIGhostDocumentAnonymizer.transform_documents() was called from inside "
+            "a running event loop. Use atransform_documents() instead."
+        )
 
     async def _process(self, doc: Document) -> None:
         content = doc.page_content

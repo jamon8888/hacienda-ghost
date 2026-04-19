@@ -35,12 +35,31 @@ def test_transform_sync_path(pipeline) -> None:
     assert "Alice" not in out[0].page_content
 
 
-def test_counter_factory_rejected(pipeline) -> None:
+def test_counter_factory_rejected() -> None:
+    from piighost.anonymizer import Anonymizer
+    from piighost.models import Detection, Span
+    from piighost.pipeline.thread import ThreadAnonymizationPipeline
     from piighost.placeholder import CounterPlaceholderFactory
 
-    pipeline._anonymizer.ph_factory = CounterPlaceholderFactory()
+    class _StubDetector:
+        async def detect(self, text: str) -> list[Detection]:
+            idx = text.find("Alice")
+            if idx < 0:
+                return []
+            return [
+                Detection(
+                    text="Alice",
+                    label="PERSON",
+                    position=Span(start_pos=idx, end_pos=idx + len("Alice")),
+                    confidence=1.0,
+                )
+            ]
+
+    detector = _StubDetector()
+    anon = Anonymizer(CounterPlaceholderFactory())
+    bad_pipeline = ThreadAnonymizationPipeline(detector=detector, anonymizer=anon)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="HashPlaceholderFactory"):
-        PIIGhostDocumentAnonymizer(pipeline=pipeline)
+        PIIGhostDocumentAnonymizer(pipeline=bad_pipeline)
 
 
 def test_empty_content_is_skipped(pipeline) -> None:
