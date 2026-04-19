@@ -9,6 +9,8 @@ from typing import Any, Sequence
 
 from langchain_core.documents import Document
 from langchain_core.documents.transformers import BaseDocumentTransformer
+from langchain_core.runnables import Runnable
+from langchain_core.runnables.config import RunnableConfig
 
 from piighost.classifier.base import AnyClassifier, ClassificationSchema
 from piighost.exceptions import RehydrationError
@@ -250,3 +252,44 @@ class PIIGhostRehydrator(BaseDocumentTransformer):
                 continue
             content = content.replace(token, original)
         doc.page_content = content
+
+
+class PIIGhostQueryAnonymizer(Runnable[str, dict[str, Any]]):
+    """Anonymize a query string; strict by default.
+
+    Returns {"query": anonymized_str, "entities": list[Entity]}.
+    HashPlaceholderFactory is deterministic: same entity → same token in
+    queries and indexed documents.
+    """
+
+    def __init__(
+        self, pipeline: ThreadAnonymizationPipeline, scope: str = "query"
+    ) -> None:
+        self._pipeline = pipeline
+        self._scope = scope
+
+    def invoke(
+        self,
+        input: str,
+        config: RunnableConfig | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.ainvoke(input, config, **kwargs))
+        raise RuntimeError(
+            "PIIGhostQueryAnonymizer.invoke() was called from inside a running "
+            "event loop. Use ainvoke() instead."
+        )
+
+    async def ainvoke(
+        self,
+        input: str,
+        config: RunnableConfig | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        anonymized, entities = await self._pipeline.anonymize(
+            input, thread_id=self._scope
+        )
+        return {"query": anonymized, "entities": entities}

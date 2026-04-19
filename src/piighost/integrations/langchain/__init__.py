@@ -8,4 +8,20 @@ if importlib.util.find_spec("langchain") is None:
         "please install piighost[langchain]"
     )
 
-__all__: list[str] = []
+from piighost.integrations.langchain.transformers import (
+    PIIGhostDocumentAnonymizer,
+    PIIGhostDocumentClassifier,
+    PIIGhostQueryAnonymizer,
+    PIIGhostRehydrator,
+)
+from piighost.presets import PRESET_GDPR, PRESET_LANGUAGE, PRESET_SENSITIVITY
+
+__all__ = [
+    "PIIGhostDocumentAnonymizer",
+    "PIIGhostDocumentClassifier",
+    "PIIGhostQueryAnonymizer",
+    "PIIGhostRehydrator",
+    "PRESET_GDPR",
+    "PRESET_LANGUAGE",
+    "PRESET_SENSITIVITY",
+]
