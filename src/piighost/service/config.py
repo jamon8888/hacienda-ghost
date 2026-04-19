@@ -1,0 +1,87 @@
+"""Load ``.piighost/config.toml`` into a validated pydantic model."""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
+
+
+class VaultSection(BaseModel):
+    placeholder_factory: Literal["hash"] = "hash"
+    audit_log: bool = True
+
+    @field_validator("placeholder_factory", mode="before")
+    @classmethod
+    def _reject_non_hash(cls, v: str) -> str:
+        if v != "hash":
+            raise ValueError(
+                "placeholder_factory must be 'hash' — counter mode is unsupported "
+                "because it breaks RAG token determinism across sessions."
+            )
+        return v
+
+
+class DetectorSection(BaseModel):
+    backend: Literal["gliner2", "regex_only"] = "gliner2"
+    gliner2_model: str = "fastino/gliner2-multi-v1"
+    threshold: float = 0.5
+    labels: list[str] = Field(
+        default_factory=lambda: [
+            "PERSON", "LOC", "ORG", "EMAIL",
+            "PHONE", "IBAN", "CREDIT_CARD", "ID",
+        ]
+    )
+
+
+class EmbedderSection(BaseModel):
+    backend: Literal["local", "mistral", "none"] = "none"
+    local_model: str = "OrdalieTech/Solon-embeddings-base-0.1"
+    mistral_model: str = "mistral-embed"
+
+
+class IndexSection(BaseModel):
+    store: Literal["lancedb"] = "lancedb"
+    chunk_size: int = 512
+    chunk_overlap: int = 64
+    bm25_weight: float = 0.4
+    vector_weight: float = 0.6
+
+
+class DaemonSection(BaseModel):
+    idle_timeout_sec: int = 3600
+    log_level: Literal["debug", "info", "warn", "error"] = "info"
+    max_workers: int = 4
+
+
+class SafetySection(BaseModel):
+    strict_rehydrate: bool = True
+    max_doc_bytes: int = 10_485_760
+    redact_errors: bool = True
+
+
+class ServiceConfig(BaseModel):
+    schema_version: int = 1
+    vault: VaultSection = Field(default_factory=VaultSection)
+    detector: DetectorSection = Field(default_factory=DetectorSection)
+    embedder: EmbedderSection = Field(default_factory=EmbedderSection)
+    index: IndexSection = Field(default_factory=IndexSection)
+    daemon: DaemonSection = Field(default_factory=DaemonSection)
+    safety: SafetySection = Field(default_factory=SafetySection)
+
+    @classmethod
+    def from_toml(cls, path: Path) -> "ServiceConfig":
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+        return cls.model_validate(data)
+
+    @classmethod
+    def default(cls) -> "ServiceConfig":
+        return cls()
