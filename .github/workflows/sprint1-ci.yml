@@ -1,4 +1,4 @@
-name: CI
+name: CLI + Daemon Cross-Platform
 
 on:
   push:
