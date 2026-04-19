@@ -244,3 +244,15 @@ uv run pytest tests/ -k "test_name"  # Run a single test
 - The GLiNER2 model is downloaded from HuggingFace on first use (~500 MB)
 - All data models are frozen dataclasses safe to share across threads
 - Tests use `ExactMatchDetector` to avoid loading the real GLiNER2 model in CI
+
+### Hybrid retrieval for PII-heavy queries
+
+When indexed content is anonymized, pure vector search can miss exact-name
+lookups because placeholder tokens (`<PERSON:…>`) have no semantic content.
+Combine BM25 (exact keyword match on the deterministic token) with vector
+search using `EnsembleRetriever`. See
+`tests/integrations/langchain/test_hybrid_retrieval.py` for a working recipe.
+
+> **Ordering invariant.** The anonymizer must run before the embedder. When
+> wired correctly, cloud embedders see only opaque tokens; the token→original
+> mapping stays in LanceDB metadata on your infrastructure.
