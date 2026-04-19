@@ -176,3 +176,6 @@ Thumbs.db
 # Local sandbox scripts
 sandbox/
 
+
+# Git worktrees (isolated dev environments)
+.worktrees/
