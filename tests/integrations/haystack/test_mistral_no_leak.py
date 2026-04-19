@@ -1,9 +1,8 @@
 """Proof: when wired correctly, the Mistral embedder never sees raw PII.
 
 Gated on ``haystack`` and ``haystack_integrations`` extras.  Uses
-``unittest.mock.patch`` to inject an ``httpx.MockTransport`` into the
-Mistral embedder's underlying HTTP client so every outbound request body
-is captured and inspected.
+``httpx.MockTransport`` injected via ``http_client_kwargs`` into the
+Mistral embedder so every outbound request body is captured and inspected.
 
 Marked ``slow`` — skips cleanly when extras are absent.
 """
@@ -61,6 +60,20 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
 
     os.environ.setdefault("MISTRAL_API_KEY", "test-key")
 
+    # Inject the mock transport via http_client_kwargs so all outbound HTTP
+    # requests (both sync and async) go through our handler.
+    http_client_kwargs = {"transport": transport}
+
+    # Check if http_client_kwargs is supported (mistral-haystack >= 1.2)
+    import inspect
+
+    doc_embedder_sig = inspect.signature(MistralDocumentEmbedder.__init__)
+    if "http_client_kwargs" not in doc_embedder_sig.parameters:
+        pytest.skip(
+            "Cannot inject transport into MistralDocumentEmbedder "
+            "(http_client_kwargs not supported in this version); skipping leak-proof test"
+        )
+
     # Anonymize documents first
     anonymizer = PIIGhostDocumentAnonymizer(pipeline=pipeline)
     raw_docs = [Document(content="Alice visited Paris")]
@@ -72,32 +85,14 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
         assert "Alice" not in doc.content
         assert "Paris" not in doc.content
 
-    # Embed documents via Mistral, injecting mock transport via patch
-    from unittest.mock import patch
-
-    doc_embedder = MistralDocumentEmbedder(model="mistral-embed")
+    # Embed documents via Mistral with mock transport
+    doc_embedder = MistralDocumentEmbedder(
+        model="mistral-embed",
+        http_client_kwargs=http_client_kwargs,
+    )
     if hasattr(doc_embedder, "warm_up"):
-        # Patch the httpx client inside warm_up / run so requests go to mock
-        with patch(
-            "httpx.Client",
-            return_value=httpx.Client(transport=transport),
-        ):
-            with patch(
-                "httpx.AsyncClient",
-                return_value=httpx.AsyncClient(transport=transport),
-            ):
-                doc_embedder.warm_up()
-                doc_embedder.run(documents=anonymized_docs)
-    else:
-        with patch(
-            "httpx.Client",
-            return_value=httpx.Client(transport=transport),
-        ):
-            with patch(
-                "httpx.AsyncClient",
-                return_value=httpx.AsyncClient(transport=transport),
-            ):
-                doc_embedder.run(documents=anonymized_docs)
+        doc_embedder.warm_up()
+    doc_embedder.run(documents=anonymized_docs)
 
     # Anonymize query and embed it
     query_anon = PIIGhostQueryAnonymizer(pipeline=pipeline)
@@ -105,32 +100,21 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
     anonymized_query = q_out["query"]
     assert "Alice" not in anonymized_query
 
-    text_embedder = MistralTextEmbedder(model="mistral-embed")
-    if hasattr(text_embedder, "warm_up"):
-        with patch(
-            "httpx.Client",
-            return_value=httpx.Client(transport=transport),
-        ):
-            with patch(
-                "httpx.AsyncClient",
-                return_value=httpx.AsyncClient(transport=transport),
-            ):
-                text_embedder.warm_up()
-                text_embedder.run(text=anonymized_query)
+    text_embedder_sig = inspect.signature(MistralTextEmbedder.__init__)
+    if "http_client_kwargs" in text_embedder_sig.parameters:
+        text_embedder = MistralTextEmbedder(
+            model="mistral-embed",
+            http_client_kwargs=http_client_kwargs,
+        )
     else:
-        with patch(
-            "httpx.Client",
-            return_value=httpx.Client(transport=transport),
-        ):
-            with patch(
-                "httpx.AsyncClient",
-                return_value=httpx.AsyncClient(transport=transport),
-            ):
-                text_embedder.run(text=anonymized_query)
+        text_embedder = MistralTextEmbedder(model="mistral-embed")
 
-    # The mock may or may not intercept depending on how the integration
-    # initialises its client. If captured is empty, fall back to asserting
-    # the anonymized strings don't contain PII (already done above).
+    if hasattr(text_embedder, "warm_up"):
+        text_embedder.warm_up()
+    text_embedder.run(text=anonymized_query)
+
+    # The mock transport must have intercepted at least one request.
+    assert captured, "mock transport should have captured at least one request"
     for body in captured:
         text = body.decode("utf-8", errors="replace")
         assert "Alice" not in text, "raw PII 'Alice' leaked to Mistral embedder"

@@ -34,7 +34,7 @@ from piighost.integrations.haystack import (  # noqa: E402
 # Fast test (existing — unchanged)
 # ---------------------------------------------------------------------------
 
-pytestmark = [pytest.mark.asyncio, pytest.mark.slow]
+pytestmark = [pytest.mark.asyncio]
 
 
 async def test_mapping_survives_lancedb_roundtrip(tmp_path, pipeline) -> None:
