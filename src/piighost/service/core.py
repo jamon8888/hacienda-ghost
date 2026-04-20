@@ -219,6 +219,7 @@ class PIIGhostService:
                 if existing:
                     self._chunk_store.delete_doc(existing.doc_id)
                     if existing.doc_id != doc_id:
+                        self._vault.delete_doc_entities(existing.doc_id)
                         self._vault.delete_indexed_file(existing.doc_id)
 
                 result = await self.anonymize(text, doc_id=doc_id)
@@ -241,11 +242,12 @@ class PIIGhostService:
             except Exception as exc:
                 errors.append(f"{p}: {type(exc).__name__}")
 
-        all_records = self._chunk_store.all_records()
-        if all_records:
-            self._bm25.rebuild(all_records)
-        else:
-            self._bm25.clear()
+        if indexed > 0 or errors:
+            all_records = self._chunk_store.all_records()
+            if all_records:
+                self._bm25.rebuild(all_records)
+            else:
+                self._bm25.clear()
 
         duration_ms = int((_time.monotonic() - start) * 1000)
         return IndexReport(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
+
+_SAFE_DOC_ID_RE = re.compile(r"^[0-9a-f]{1,64}$")
 
 
 class ChunkStore:
@@ -78,6 +81,8 @@ class ChunkStore:
         if table_name not in self._db.list_tables().tables:
             return
         tbl = self._db.open_table(table_name)
+        if not _SAFE_DOC_ID_RE.fullmatch(doc_id):
+            raise ValueError("unsafe doc_id format")
         tbl.delete(f"doc_id = '{doc_id}'")
 
     def all_records(self) -> list[dict]:
