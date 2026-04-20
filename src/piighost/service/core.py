@@ -542,6 +542,46 @@ class PIIGhostService:
         svc = await self._get_project(project)
         return await svc.vault_search(query, reveal=reveal, limit=limit)
 
+    async def list_projects(self) -> "list[ProjectInfo]":
+        return self._registry.list()
+
+    async def create_project(
+        self, name: str, description: str = "", placeholder_salt: str | None = None
+    ) -> "ProjectInfo":
+        return self._registry.create(
+            name, description=description, placeholder_salt=placeholder_salt
+        )
+
+    async def delete_project(self, name: str, *, force: bool = False) -> bool:
+        if name == "default":
+            raise ValueError("the default project cannot be deleted")
+
+        info = self._registry.get(name)
+        if info is None:
+            return False
+
+        if not force:
+            svc = await self._get_project(name)
+            stats = await svc.vault_stats()
+            status = await svc.index_status()
+            if stats.total > 0 or status.total_docs > 0:
+                from piighost.exceptions import ProjectNotEmpty
+                raise ProjectNotEmpty(
+                    name=name,
+                    doc_count=status.total_docs,
+                    vault_count=stats.total,
+                )
+
+        cached = self._cache.pop(name, None)
+        if cached is not None:
+            await cached.close()
+
+        import shutil
+        project_dir = self._vault_dir / "projects" / name
+        if project_dir.exists():
+            shutil.rmtree(project_dir)
+        return self._registry.delete(name)
+
     async def flush(self) -> None:
         for svc in self._cache.values():
             await svc.flush()
