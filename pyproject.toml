@@ -45,6 +45,7 @@ dependencies = [
     "httpx>=0.27",
     "starlette>=0.37",
     "uvicorn>=0.30",
+    "kreuzberg>=0.5",
 ]
 
 [project.scripts]
@@ -102,6 +103,15 @@ haystack-embeddings-mistral = [
     "piighost[haystack]",
     "mistral-haystack>=0.1",
 ]
+index = [
+    "kreuzberg>=0.5",
+    "lancedb>=0.15",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.3",
+]
+mcp = [
+    "fastmcp>=2.0",
+]
 langchain-lancedb = [
     "piighost[langchain]",
     "langchain-community>=0.3",
@@ -121,7 +131,7 @@ langchain-embeddings-mistral = [
     "langchain-mistralai>=0.2",
 ]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,haystack]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,haystack,index,mcp]",
 ]
 
 [build-system]
