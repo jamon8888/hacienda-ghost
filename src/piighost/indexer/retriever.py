@@ -3,6 +3,8 @@ from __future__ import annotations
 import pickle
 from pathlib import Path
 
+from piighost.indexer.filters import QueryFilter
+
 
 class BM25Index:
     def __init__(self, pkl_path: Path) -> None:
@@ -33,17 +35,33 @@ class BM25Index:
         if self._pkl_path.exists():
             self._pkl_path.unlink()
 
-    def search(self, query: str, *, k: int = 5) -> list[tuple[str, float]]:
+    def search(
+        self,
+        query: str,
+        *,
+        k: int = 5,
+        filter: QueryFilter | None = None,
+    ) -> list[tuple[str, float]]:
         if self._bm25 is None:
             return []
         tokens = query.lower().split()
         scores = self._bm25.get_scores(tokens)
-        pairs = sorted(
-            zip([r["chunk_id"] for r in self._records], scores),
+        triples = sorted(
+            zip(
+                [r["chunk_id"] for r in self._records],
+                scores,
+                self._records,
+            ),
             key=lambda x: x[1],
             reverse=True,
         )
-        return [(cid, float(s)) for cid, s in pairs[:k] if s > 0]
+        if filter is not None and not filter.is_empty():
+            triples = [
+                (cid, s, rec)
+                for cid, s, rec in triples
+                if filter.matches(rec["doc_id"], rec["file_path"])
+            ]
+        return [(cid, float(s)) for cid, s, _rec in triples[:k] if s > 0]
 
 
 def reciprocal_rank_fusion(

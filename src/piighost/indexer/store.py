@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from piighost.indexer.filters import QueryFilter
+
 _SAFE_DOC_ID_RE = re.compile(r"^[0-9a-f]{1,64}$")
 
 
@@ -97,7 +99,13 @@ class ChunkStore:
         rows = tbl.to_arrow().to_pylist()
         return [{k: v for k, v in r.items() if k != "vector"} for r in rows]
 
-    def vector_search(self, embedding: list[float], *, k: int = 5) -> list[dict]:
+    def vector_search(
+        self,
+        embedding: list[float],
+        *,
+        k: int = 5,
+        filter: QueryFilter | None = None,
+    ) -> list[dict]:
         if self._meta_mode or not embedding:
             return []
         if self._db is None:
@@ -106,5 +114,10 @@ class ChunkStore:
         if table_name not in self._db.list_tables().tables:
             return []
         tbl = self._db.open_table(table_name)
-        results = tbl.search(embedding).limit(k).to_list()
+        search = tbl.search(embedding)
+        if filter is not None and not filter.is_empty():
+            where = filter.to_lance_where()
+            if where:
+                search = search.where(where)
+        results = search.limit(k).to_list()
         return [{k: v for k, v in r.items() if k != "vector"} for r in results]
