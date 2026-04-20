@@ -115,9 +115,20 @@ async def _dispatch(
         return [e.model_dump() for e in entries]
     if method == "index_path":
         report = await svc.index_path(
-            Path(params["path"]), recursive=params.get("recursive", True)
+            Path(params["path"]),
+            recursive=params.get("recursive", True),
+            force=params.get("force", False),
         )
         return report.model_dump()
+    if method == "remove_doc":
+        removed = await svc.remove_doc(Path(params["path"]))
+        return {"removed": removed}
+    if method == "index_status":
+        status = await svc.index_status(
+            limit=params.get("limit", 100),
+            offset=params.get("offset", 0),
+        )
+        return status.model_dump()
     if method == "query":
         result = await svc.query(params["text"], k=params.get("k", 5))
         return result.model_dump()

@@ -1,4 +1,4 @@
-"""`piighost index <path>` — index a file or directory."""
+"""`piighost rm <path>` — remove a document from the index."""
 from __future__ import annotations
 
 import asyncio
@@ -14,10 +14,8 @@ from piighost.service import PIIGhostService
 
 
 def run(
-    path: Path = typer.Argument(..., help="File or directory to index"),
+    path: Path = typer.Argument(..., help="File to remove from the index"),
     vault: Path | None = typer.Option(None, "--vault"),
-    recursive: bool = typer.Option(True, "--recursive/--no-recursive"),
-    force: bool = typer.Option(False, "--force/--no-force", help="Re-index even if unchanged"),
 ) -> None:
     try:
         vault_dir = _resolve_vault(vault)
@@ -32,18 +30,18 @@ def run(
 
     client = DaemonClient.from_vault(vault_dir)
     if client is not None:
-        result = client.call("index_path", {"path": str(path.resolve()), "recursive": recursive, "force": force})
+        result = client.call("remove_doc", {"path": str(path.resolve())})
         emit_json_line(result)
         return
 
-    asyncio.run(_index(vault_dir, path, recursive, force))
+    asyncio.run(_remove(vault_dir, path))
 
 
-async def _index(vault_dir: Path, path: Path, recursive: bool, force: bool) -> None:
+async def _remove(vault_dir: Path, path: Path) -> None:
     config = _load_cfg(vault_dir)
     svc = await PIIGhostService.create(vault_dir=vault_dir, config=config)
     try:
-        report = await svc.index_path(path.resolve(), recursive=recursive, force=force)
-        emit_json_line(report.model_dump())
+        removed = await svc.remove_doc(path.resolve())
+        emit_json_line({"removed": removed})
     finally:
         await svc.close()
