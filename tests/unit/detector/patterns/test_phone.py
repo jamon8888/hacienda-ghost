@@ -4,13 +4,13 @@ from piighost.detector.patterns.phone import PHONE_PATTERN
 def test_matches_french_mobile():
     m = PHONE_PATTERN.regex.search("call +33 6 12 34 56 78 tomorrow")
     assert m is not None
-    assert "+33 6 12 34 56 78" in m.group(0)
+    assert m.group(0) == "+33 6 12 34 56 78"
 
 
 def test_matches_german_number():
     m = PHONE_PATTERN.regex.search("Reach us at +49 30 12345678")
     assert m is not None
-    assert "+49 30 12345678" in m.group(0)
+    assert m.group(0) == "+49 30 12345678"
 
 
 def test_matches_uk_number():

@@ -35,3 +35,15 @@ def test_ipv4_label():
 
 def test_ipv6_label():
     assert IPV6_PATTERN.label == "IP_ADDRESS"
+
+
+def test_ipv6_matches_middle_compressed():
+    m = IPV6_PATTERN.regex.search("addr 2001:db8::1 end")
+    assert m is not None
+    assert m.group(0) == "2001:db8::1"
+
+
+def test_ipv6_matches_another_middle_compressed():
+    m = IPV6_PATTERN.regex.search("connect fe80::abcd:1234 now")
+    assert m is not None
+    assert m.group(0) == "fe80::abcd:1234"
