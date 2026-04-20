@@ -48,6 +48,11 @@ def test_single_quote_in_prefix_is_escaped():
     assert "o''brien" in f.to_lance_where()
 
 
+def test_single_quote_in_doc_ids_is_escaped():
+    f = QueryFilter(doc_ids=("ab'cd",))
+    assert "ab''cd" in f.to_lance_where()
+
+
 def test_filter_is_hashable():
     f = QueryFilter(file_path_prefix="/a", doc_ids=("x",))
     {f}  # no TypeError

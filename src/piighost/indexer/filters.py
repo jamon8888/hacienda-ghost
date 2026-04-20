@@ -19,7 +19,8 @@ class QueryFilter:
             escaped = self.file_path_prefix.replace("'", "''")
             clauses.append(f"file_path LIKE '{escaped}%'")
         if self.doc_ids:
-            ids = ", ".join(f"'{d}'" for d in self.doc_ids)
+            escaped_ids = [d.replace("'", "''") for d in self.doc_ids]
+            ids = ", ".join(f"'{d}'" for d in escaped_ids)
             clauses.append(f"doc_id IN ({ids})")
         return " AND ".join(clauses) if clauses else None
 
