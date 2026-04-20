@@ -226,6 +226,14 @@ def build_piighost_rag(
                     except ImportError:  # pragma: no cover
                         streaming_callback(emitted)
 
+            existing = getattr(llm_generator, "streaming_callback", None)
+            if existing is not None:
+                import warnings
+                warnings.warn(
+                    "build_piighost_rag: llm_generator already has streaming_callback set; "
+                    "overwriting with piighost-wrapped callback. Pass a fresh generator to avoid this.",
+                    stacklevel=2,
+                )
             llm_generator.streaming_callback = _wrapped
         pipeline.add_component("llm", llm_generator)
 
