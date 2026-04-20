@@ -163,10 +163,22 @@ async def _dispatch(
         )
         return status.model_dump()
     if method == "query":
+        from piighost.indexer.filters import QueryFilter
+
+        raw_filter = params.get("filter")
+        qfilter = None
+        if raw_filter:
+            qfilter = QueryFilter(
+                file_path_prefix=raw_filter.get("file_path_prefix") or None,
+                doc_ids=tuple(raw_filter.get("doc_ids") or ()),
+            )
         result = await svc.query(
             params["text"],
             k=params.get("k", 5),
             project=params.get("project", "default"),
+            filter=qfilter,
+            rerank=params.get("rerank", False),
+            top_n=params.get("top_n", 20),
         )
         return result.model_dump()
     if method == "list_projects":
