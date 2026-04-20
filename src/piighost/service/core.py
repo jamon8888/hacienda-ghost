@@ -185,33 +185,58 @@ class PIIGhostService:
         ]
 
     async def index_path(
-        self, path: Path, *, recursive: bool = True
+        self, path: Path, *, recursive: bool = True, force: bool = False
     ) -> "IndexReport":
-        import time
+        import time as _time
+
         from piighost.indexer.chunker import chunk_text
+        from piighost.indexer.identity import content_hash
         from piighost.indexer.ingestor import list_document_paths, extract_text
         from piighost.service.models import IndexReport
 
-        start = time.monotonic()
+        start = _time.monotonic()
         paths = await list_document_paths(path, recursive=recursive)
         indexed = 0
         skipped = 0
+        unchanged = 0
         errors: list[str] = []
 
         for p in paths:
             try:
+                stat = p.stat()
+                existing = self._vault.get_indexed_file_by_path(str(p))
+                if not force and existing and abs(existing.mtime - stat.st_mtime) < 0.001:
+                    unchanged += 1
+                    continue
+
                 text = await extract_text(p)
                 if text is None:
                     skipped += 1
                     continue
-                result = await self.anonymize(text, doc_id=str(p))
+
+                doc_id = content_hash(p)
+
+                if existing:
+                    self._chunk_store.delete_doc(existing.doc_id)
+                    if existing.doc_id != doc_id:
+                        self._vault.delete_indexed_file(existing.doc_id)
+
+                result = await self.anonymize(text, doc_id=doc_id)
                 anon_text = result.anonymized
                 chunks = chunk_text(anon_text)
                 if not chunks:
                     skipped += 1
                     continue
+
                 vectors = await self._embedder.embed(chunks)
-                self._chunk_store.upsert_chunks(str(p), str(p), chunks, vectors)
+                self._chunk_store.upsert_chunks(doc_id, str(p), chunks, vectors)
+                self._vault.upsert_indexed_file(
+                    doc_id=doc_id,
+                    file_path=str(p),
+                    content_hash=doc_id,
+                    mtime=stat.st_mtime,
+                    chunk_count=len(chunks),
+                )
                 indexed += 1
             except Exception as exc:
                 errors.append(f"{p}: {type(exc).__name__}")
@@ -219,11 +244,14 @@ class PIIGhostService:
         all_records = self._chunk_store.all_records()
         if all_records:
             self._bm25.rebuild(all_records)
+        else:
+            self._bm25.clear()
 
-        duration_ms = int((time.monotonic() - start) * 1000)
+        duration_ms = int((_time.monotonic() - start) * 1000)
         return IndexReport(
             indexed=indexed,
             skipped=skipped,
+            unchanged=unchanged,
             errors=errors,
             duration_ms=duration_ms,
         )

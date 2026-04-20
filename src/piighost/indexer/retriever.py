@@ -27,6 +27,12 @@ class BM25Index:
             self._records, self._bm25 = pickle.load(f)
         return True
 
+    def clear(self) -> None:
+        self._records = []
+        self._bm25 = None
+        if self._pkl_path.exists():
+            self._pkl_path.unlink()
+
     def search(self, query: str, *, k: int = 5) -> list[tuple[str, float]]:
         if self._bm25 is None:
             return []

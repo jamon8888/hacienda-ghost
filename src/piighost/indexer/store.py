@@ -68,6 +68,18 @@ class ChunkStore:
             )
             self._tbl = self._db.create_table(table_name, data=records, schema=schema)
 
+    def delete_doc(self, doc_id: str) -> None:
+        if self._meta_mode:
+            self._meta = [r for r in self._meta if r["doc_id"] != doc_id]
+            return
+        if self._db is None:
+            return
+        table_name = "chunks"
+        if table_name not in self._db.list_tables().tables:
+            return
+        tbl = self._db.open_table(table_name)
+        tbl.delete(f"doc_id = '{doc_id}'")
+
     def all_records(self) -> list[dict]:
         if self._meta_mode:
             return list(self._meta)

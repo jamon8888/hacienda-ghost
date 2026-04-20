@@ -55,6 +55,7 @@ class VaultPage(BaseModel):
 class IndexReport(BaseModel):
     indexed: int
     skipped: int
+    unchanged: int = 0
     errors: list[str] = Field(default_factory=list)
     duration_ms: int
 
