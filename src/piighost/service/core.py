@@ -199,6 +199,7 @@ class PIIGhostService:
         start = _time.monotonic()
         paths = await list_document_paths(path, recursive=recursive)
         indexed = 0
+        deleted = 0
         skipped = 0
         unchanged = 0
         errors: list[str] = []
@@ -206,6 +207,7 @@ class PIIGhostService:
         for p in paths:
             try:
                 stat = p.stat()
+                p = p.resolve()
                 existing = self._vault.get_indexed_file_by_path(str(p))
                 if not force and existing and abs(existing.mtime - stat.st_mtime) < 0.001:
                     unchanged += 1
@@ -220,6 +222,7 @@ class PIIGhostService:
 
                 if existing:
                     self._chunk_store.delete_doc(existing.doc_id)
+                    deleted += 1
                     if existing.doc_id != doc_id:
                         self._vault.delete_doc_entities(existing.doc_id)
                         self._vault.delete_indexed_file(existing.doc_id)
@@ -244,7 +247,7 @@ class PIIGhostService:
             except Exception as exc:
                 errors.append(f"{p}: {type(exc).__name__}")
 
-        if indexed > 0 or errors:
+        if indexed > 0 or deleted > 0 or errors:
             all_records = self._chunk_store.all_records()
             if all_records:
                 self._bm25.rebuild(all_records)
