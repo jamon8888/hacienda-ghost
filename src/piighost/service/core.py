@@ -214,7 +214,7 @@ class PIIGhostService:
                 self._chunk_store.upsert_chunks(str(p), str(p), chunks, vectors)
                 indexed += 1
             except Exception as exc:
-                errors.append(f"{p}: {exc}")
+                errors.append(f"{p}: {type(exc).__name__}")
 
         all_records = self._chunk_store.all_records()
         if all_records:
