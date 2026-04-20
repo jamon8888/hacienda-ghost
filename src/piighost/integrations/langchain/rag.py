@@ -36,3 +36,29 @@ class PIIGhostRAG:
         return await self._svc.index_path(
             path, recursive=recursive, force=force, project=self._project
         )
+
+    @property
+    def anonymizer(self) -> "Runnable[str, dict]":
+        from langchain_core.runnables import RunnableLambda
+
+        async def _run(text: str) -> dict:
+            result = await self._svc.anonymize(text, project=self._project)
+            return {
+                "anonymized": result.anonymized,
+                "entities": [
+                    {"token": e.token, "label": e.label, "count": e.count}
+                    for e in result.entities
+                ],
+            }
+
+        return RunnableLambda(_run)
+
+    @property
+    def rehydrator(self) -> "Runnable[str, str]":
+        from langchain_core.runnables import RunnableLambda
+
+        async def _run(text: str) -> str:
+            result = await self._svc.rehydrate(text, project=self._project, strict=False)
+            return result.text
+
+        return RunnableLambda(_run)

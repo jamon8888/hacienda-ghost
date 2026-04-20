@@ -34,3 +34,28 @@ def test_ingest_delegates_to_service(svc, tmp_path):
     report = asyncio.run(rag.ingest(doc))
     assert report.indexed >= 1
     assert report.project == "client-a"
+
+
+def test_anonymizer_is_runnable(svc):
+    rag = PIIGhostRAG(svc, project="client-a")
+    result = asyncio.run(rag.anonymizer.ainvoke("Alice lives in Paris"))
+    assert "anonymized" in result
+    assert "entities" in result
+    assert "Alice" not in result["anonymized"]
+
+
+def test_rehydrator_roundtrip(svc):
+    rag = PIIGhostRAG(svc, project="client-a")
+    anon = asyncio.run(rag.anonymizer.ainvoke("Alice lives in Paris"))
+    rehydrated = asyncio.run(rag.rehydrator.ainvoke(anon["anonymized"]))
+    assert "Alice" in rehydrated
+
+
+def test_anonymizer_project_scoped(svc):
+    rag_a = PIIGhostRAG(svc, project="client-a")
+    rag_b = PIIGhostRAG(svc, project="client-b")
+    result_a = asyncio.run(rag_a.anonymizer.ainvoke("Alice"))
+    result_b = asyncio.run(rag_b.anonymizer.ainvoke("Alice"))
+    a_tokens = {e["token"] for e in result_a["entities"]}
+    b_tokens = {e["token"] for e in result_b["entities"]}
+    assert a_tokens.isdisjoint(b_tokens)
