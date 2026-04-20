@@ -404,6 +404,10 @@ async def _build_default_detector(config: ServiceConfig) -> _Detector:
 
     if os.environ.get("PIIGHOST_DETECTOR") == "stub":
         return _StubDetector()
+    if config.detector.backend == "regex_only":
+        from piighost.detector.regex import RegexDetector
+
+        return RegexDetector()
     if config.detector.backend == "gliner2":
         from gliner2 import GLiNER2
 
