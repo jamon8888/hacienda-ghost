@@ -89,47 +89,111 @@ async def _dispatch(
     svc: PIIGhostService, method: str, params: dict[str, Any]
 ) -> Any:
     if method == "anonymize":
-        r = await svc.anonymize(params["text"], doc_id=params.get("doc_id"))
+        r = await svc.anonymize(
+            params["text"],
+            doc_id=params.get("doc_id"),
+            project=params.get("project", "default"),
+        )
         return r.model_dump()
     if method == "rehydrate":
-        r = await svc.rehydrate(params["text"], strict=params.get("strict"))
+        r = await svc.rehydrate(
+            params["text"],
+            strict=params.get("strict"),
+            project=params.get("project", "default"),
+        )
         return r.model_dump()
     if method == "detect":
-        return [d.model_dump() for d in await svc.detect(params["text"])]
+        return [
+            d.model_dump()
+            for d in await svc.detect(
+                params["text"],
+                project=params.get("project", "default"),
+            )
+        ]
     if method == "vault_list":
         r = await svc.vault_list(
             label=params.get("label"),
             limit=params.get("limit", 100),
             reveal=params.get("reveal", False),
+            project=params.get("project", "default"),
         )
         return r.model_dump()
     if method == "vault_show":
-        r = await svc.vault_show(params["token"], reveal=params.get("reveal", False))
+        r = await svc.vault_show(
+            params["token"],
+            reveal=params.get("reveal", False),
+            project=params.get("project", "default"),
+        )
         return r.model_dump() if r else None
     if method == "vault_stats":
-        return (await svc.vault_stats()).model_dump()
+        return (
+            await svc.vault_stats(project=params.get("project", "default"))
+        ).model_dump()
     if method == "vault_search":
         entries = await svc.vault_search(
-            params["query"], reveal=params.get("reveal", False), limit=params.get("limit", 100)
+            params["query"],
+            reveal=params.get("reveal", False),
+            limit=params.get("limit", 100),
+            project=params.get("project", "default"),
         )
         return [e.model_dump() for e in entries]
     if method == "index_path":
+        from pathlib import Path as _Path
+
+        raw_project = params.get("project", "")
+        project = raw_project if raw_project else None
         report = await svc.index_path(
-            Path(params["path"]),
+            _Path(params["path"]),
             recursive=params.get("recursive", True),
             force=params.get("force", False),
+            project=project,
         )
         return report.model_dump()
     if method == "remove_doc":
-        removed = await svc.remove_doc(Path(params["path"]))
+        removed = await svc.remove_doc(
+            Path(params["path"]),
+            project=params.get("project", "default"),
+        )
         return {"removed": removed}
     if method == "index_status":
         status = await svc.index_status(
             limit=params.get("limit", 100),
             offset=params.get("offset", 0),
+            project=params.get("project", "default"),
         )
         return status.model_dump()
     if method == "query":
-        result = await svc.query(params["text"], k=params.get("k", 5))
+        result = await svc.query(
+            params["text"],
+            k=params.get("k", 5),
+            project=params.get("project", "default"),
+        )
         return result.model_dump()
+    if method == "list_projects":
+        projects = await svc.list_projects()
+        return [
+            {
+                "name": p.name,
+                "description": p.description,
+                "created_at": p.created_at,
+                "last_accessed_at": p.last_accessed_at,
+                "placeholder_salt": p.placeholder_salt,
+            }
+            for p in projects
+        ]
+    if method == "create_project":
+        info = await svc.create_project(
+            params["name"],
+            description=params.get("description", ""),
+        )
+        return {
+            "name": info.name,
+            "description": info.description,
+            "created_at": info.created_at,
+        }
+    if method == "delete_project":
+        deleted = await svc.delete_project(
+            params["name"], force=params.get("force", False)
+        )
+        return {"deleted": deleted, "name": params["name"]}
     raise ValueError("Unknown method")
