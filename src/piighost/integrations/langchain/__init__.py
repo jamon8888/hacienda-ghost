@@ -15,6 +15,7 @@ from piighost.integrations.langchain.transformers import (
     PIIGhostRehydrator,
 )
 from piighost.presets import PRESET_GDPR, PRESET_LANGUAGE, PRESET_SENSITIVITY
+from piighost.integrations.langchain.rag import PIIGhostRAG  # noqa: F401
 
 __all__ = [
     "PIIGhostDocumentAnonymizer",
@@ -24,4 +25,5 @@ __all__ = [
     "PRESET_GDPR",
     "PRESET_LANGUAGE",
     "PRESET_SENSITIVITY",
+    "PIIGhostRAG",
 ]
