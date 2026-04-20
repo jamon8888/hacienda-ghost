@@ -1,0 +1,54 @@
+{
+  "manifest_version": "0.4",
+  "name": "piighost-full",
+  "display_name": "piighost (Full)",
+  "version": "0.8.0",
+  "description": "GDPR PII anonymization, vault, and document indexing + retrieval",
+  "long_description": "piighost provides GDPR-compliant PII anonymization, rehydration, vault operations, plus full document indexing with hybrid BM25+vector retrieval as MCP tools. First-run installation downloads ~1.5 GB of Python packages (torch, sentence-transformers, lancedb).",
+  "author": {
+    "name": "Athroniaeth"
+  },
+  "homepage": "https://github.com/Athroniaeth/piighost",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Athroniaeth/piighost.git"
+  },
+  "support": "https://github.com/Athroniaeth/piighost/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "src/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "env": {
+        "PIIGHOST_VAULT_DIR": "${user_config.vault_dir}",
+        "MISTRAL_API_KEY": "${user_config.mistral_api_key}"
+      }
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  },
+  "user_config": {
+    "vault_dir": {
+      "type": "directory",
+      "title": "Vault Directory",
+      "description": "Location of your PII vault (persisted across sessions)",
+      "required": true,
+      "default": "${HOME}/.piighost/vault"
+    },
+    "mistral_api_key": {
+      "type": "string",
+      "title": "Mistral API Key (optional)",
+      "description": "Required only if embedder backend is 'mistral'. Leave blank to use local embeddings.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "keywords": ["pii", "anonymization", "gdpr", "privacy", "vault", "rag", "retrieval", "indexing"],
+  "license": "MIT"
+}
