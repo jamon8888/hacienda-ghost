@@ -143,6 +143,32 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         doc_ids = {r["doc_id"] for r in records}
         return f"Indexed documents: {len(doc_ids)}\nTotal chunks: {len(records)}"
 
+    @mcp.resource("piighost://projects")
+    async def projects_resource() -> str:
+        import json
+        projects = await svc.list_projects()
+        payload = [
+            {
+                "name": p.name,
+                "description": p.description,
+                "created_at": p.created_at,
+                "last_accessed_at": p.last_accessed_at,
+            }
+            for p in projects
+        ]
+        return json.dumps(payload, indent=2)
+
+    @mcp.resource("piighost://projects/{name}/stats")
+    async def project_stats_resource(name: str) -> str:
+        stats = await svc.vault_stats(project=name)
+        status = await svc.index_status(project=name)
+        return (
+            f"Project: {name}\n"
+            f"Vault entities: {stats.total}\n"
+            f"Indexed docs: {status.total_docs}\n"
+            f"Total chunks: {status.total_chunks}\n"
+        )
+
     return mcp, svc
 
 
