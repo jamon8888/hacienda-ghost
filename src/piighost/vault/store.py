@@ -157,6 +157,7 @@ class Vault:
         chunk_count: int,
     ) -> None:
         now = int(time.time())
+        # Delete stale row for this path if the doc_id changed (file_path unique index would conflict).
         self._conn.execute(
             "DELETE FROM indexed_files WHERE file_path = ? AND doc_id != ?",
             (file_path, doc_id),

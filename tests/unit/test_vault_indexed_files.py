@@ -1,4 +1,3 @@
-import time
 from piighost.vault.store import Vault
 
 
@@ -50,4 +49,21 @@ def test_count_and_total_chunks(tmp_path):
     v.upsert_indexed_file("bbb", "/b.txt", "bbb", 2.0, 6)
     assert v.count_indexed_files() == 2
     assert v.total_chunk_count() == 10
+    v.close()
+
+
+def test_upsert_same_doc_id_updates_in_place(tmp_path):
+    v = _open(tmp_path)
+    v.upsert_indexed_file("abc123", "/docs/a.txt", "abc123", 1000.0, 5)
+    v.upsert_indexed_file("abc123", "/docs/a.txt", "newHash", 2000.0, 9)
+    rec = v.get_indexed_file_by_path("/docs/a.txt")
+    assert rec.doc_id == "abc123"
+    assert rec.chunk_count == 9
+    assert rec.content_hash == "newHash"
+    v.close()
+
+
+def test_delete_returns_false_for_missing_doc(tmp_path):
+    v = _open(tmp_path)
+    assert v.delete_indexed_file("nonexistent") is False
     v.close()

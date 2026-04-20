@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 
 CURRENT_SCHEMA_VERSION = 2
 
@@ -65,7 +66,6 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_DDL)
     cur = conn.execute("SELECT COUNT(*) FROM schema_meta")
     if cur.fetchone()[0] == 0:
-        import time
         conn.execute(
             "INSERT INTO schema_meta (singleton, version, created_at) VALUES (1, ?, ?)",
             (CURRENT_SCHEMA_VERSION, int(time.time())),
