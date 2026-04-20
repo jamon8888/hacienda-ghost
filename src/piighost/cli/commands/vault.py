@@ -168,7 +168,12 @@ def search_cmd(
     try:
         vault_dir = _resolve_vault(vault)
     except VaultNotFound as exc:
-        emit_error_line("VaultNotFound", str(exc), "Run `piighost init`", ExitCode.USER_ERROR)
+        emit_error_line(
+            error="VaultNotFound",
+            message=str(exc),
+            hint="Run `piighost init`",
+            exit_code=ExitCode.USER_ERROR,
+        )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
 
     client = DaemonClient.from_vault(vault_dir)

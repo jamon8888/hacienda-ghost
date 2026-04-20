@@ -19,6 +19,7 @@ def test_query_help():
 def test_vault_search_help():
     result = runner.invoke(app, ["vault", "search", "--help"])
     assert result.exit_code == 0
+    assert "query" in result.output.lower()
 
 
 def test_serve_help():
