@@ -13,7 +13,7 @@ def svc_with_docs(tmp_path, monkeypatch):
     docs.mkdir()
     (docs / "a.txt").write_text("Alice works in Paris")
     (docs / "b.txt").write_text("Legal contracts are reviewed weekly")
-    asyncio.run(svc.index_path(docs))
+    asyncio.run(svc.index_path(docs, project="default"))
     return svc, docs
 
 

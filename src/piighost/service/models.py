@@ -58,6 +58,7 @@ class IndexReport(BaseModel):
     unchanged: int = 0
     errors: list[str] = Field(default_factory=list)
     duration_ms: int
+    project: str = "default"
 
 
 class QueryHit(BaseModel):

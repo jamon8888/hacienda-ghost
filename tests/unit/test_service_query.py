@@ -14,7 +14,7 @@ def indexed_svc(tmp_path, monkeypatch):
     docs.mkdir()
     (docs / "a.txt").write_text("Alice Smith is a senior engineer at ACME Corp.")
     (docs / "b.txt").write_text("Bob Jones works as a lawyer in Paris.")
-    asyncio.run(svc.index_path(docs))
+    asyncio.run(svc.index_path(docs, project="default"))
     return svc
 
 

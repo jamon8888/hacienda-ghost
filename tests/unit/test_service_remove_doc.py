@@ -12,7 +12,7 @@ def indexed_svc(tmp_path, monkeypatch):
     svc = asyncio.run(PIIGhostService.create(vault_dir=vault_dir))
     f = tmp_path / "doc.txt"
     f.write_text("Alice works in Paris on legal contracts.")
-    asyncio.run(svc.index_path(f))
+    asyncio.run(svc.index_path(f, project="default"))
     return svc, f
 
 

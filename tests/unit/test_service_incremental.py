@@ -52,7 +52,7 @@ def test_doc_id_is_content_hash(vault_dir, monkeypatch, tmp_path):
     svc = _make_svc(vault_dir, monkeypatch)
     f = tmp_path / "doc.txt"
     f.write_text("Alice works in Paris")
-    asyncio.run(svc.index_path(f))
+    asyncio.run(svc.index_path(f, project="default"))
     inner = asyncio.run(svc._get_project("default"))
     rec = inner._vault.get_indexed_file_by_path(str(f))
     assert rec is not None

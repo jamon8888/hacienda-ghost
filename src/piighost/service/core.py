@@ -471,32 +471,42 @@ class PIIGhostService:
         self._registry.touch(name)
         return svc
 
-    async def anonymize(self, text: str, *, doc_id: str | None = None):
-        svc = await self._get_project("default", auto_create=True)
+    async def anonymize(self, text: str, *, doc_id: str | None = None, project: str = "default"):
+        svc = await self._get_project(project, auto_create=True)
         return await svc.anonymize(text, doc_id=doc_id)
 
-    async def rehydrate(self, text: str, *, strict: bool | None = None):
-        svc = await self._get_project("default")
+    async def rehydrate(self, text: str, *, strict: bool | None = None, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.rehydrate(text, strict=strict)
 
-    async def detect(self, text: str):
-        svc = await self._get_project("default")
+    async def detect(self, text: str, *, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.detect(text)
 
-    async def index_path(self, path: Path, *, recursive: bool = True, force: bool = False):
-        svc = await self._get_project("default", auto_create=True)
-        return await svc.index_path(path, recursive=recursive, force=force)
+    async def index_path(
+        self,
+        path: Path,
+        *,
+        recursive: bool = True,
+        force: bool = False,
+        project: str | None = None,
+    ):
+        from piighost.service.project_path import derive_project_from_path
+        resolved = project if project is not None else derive_project_from_path(path)
+        svc = await self._get_project(resolved, auto_create=True)
+        report = await svc.index_path(path, recursive=recursive, force=force)
+        return report.model_copy(update={"project": resolved})
 
-    async def remove_doc(self, path: Path) -> bool:
-        svc = await self._get_project("default")
+    async def remove_doc(self, path: Path, *, project: str = "default") -> bool:
+        svc = await self._get_project(project)
         return await svc.remove_doc(path)
 
-    async def query(self, text: str, *, k: int = 5):
-        svc = await self._get_project("default")
+    async def query(self, text: str, *, k: int = 5, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.query(text, k=k)
 
-    async def index_status(self, *, limit: int = 100, offset: int = 0):
-        svc = await self._get_project("default")
+    async def index_status(self, *, limit: int = 100, offset: int = 0, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.index_status(limit=limit, offset=offset)
 
     async def vault_list(
@@ -506,22 +516,30 @@ class PIIGhostService:
         limit: int = 100,
         offset: int = 0,
         reveal: bool = False,
+        project: str = "default",
     ):
-        svc = await self._get_project("default")
+        svc = await self._get_project(project)
         return await svc.vault_list(
             label=label, limit=limit, offset=offset, reveal=reveal
         )
 
-    async def vault_show(self, token: str, *, reveal: bool = False):
-        svc = await self._get_project("default")
+    async def vault_show(self, token: str, *, reveal: bool = False, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.vault_show(token, reveal=reveal)
 
-    async def vault_stats(self):
-        svc = await self._get_project("default")
+    async def vault_stats(self, *, project: str = "default"):
+        svc = await self._get_project(project)
         return await svc.vault_stats()
 
-    async def vault_search(self, query: str, *, reveal: bool = False, limit: int = 100):
-        svc = await self._get_project("default")
+    async def vault_search(
+        self,
+        query: str,
+        *,
+        reveal: bool = False,
+        limit: int = 100,
+        project: str = "default",
+    ):
+        svc = await self._get_project(project)
         return await svc.vault_search(query, reveal=reveal, limit=limit)
 
     async def flush(self) -> None:

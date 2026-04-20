@@ -43,7 +43,7 @@ def docs(tmp_path):
 
 def test_roundtrip_index_query_rehydrate(svc, docs):
     """Index 3 docs -> query -> verify chunks contain no raw PII tokens."""
-    report = asyncio.run(svc.index_path(docs))
+    report = asyncio.run(svc.index_path(docs, project="default"))
     assert report.indexed == 3
     assert report.errors == []
 
@@ -77,7 +77,7 @@ def test_token_identity_bm25_retrieval(svc, tmp_path):
     (doc_dir / "policy.txt").write_text(
         "The data retention policy outlines procedures for document archival."
     )
-    asyncio.run(svc.index_path(doc_dir))
+    asyncio.run(svc.index_path(doc_dir, project="default"))
 
     # Anonymize the query -- "Alice" should get the same token as in the doc
     anon = asyncio.run(svc.anonymize("What does Alice work on?"))
@@ -133,7 +133,7 @@ def test_pii_zero_leak_to_mistral(tmp_path, monkeypatch):
     (doc_dir / "sensitive.txt").write_text(
         "Alice signed a contract in Paris for a GDPR compliance project."
     )
-    asyncio.run(leak_svc.index_path(doc_dir))
+    asyncio.run(leak_svc.index_path(doc_dir, project="default"))
 
     assert captured_bodies, (
         "No embed calls were captured — kreuzberg may have failed to extract the document. "
