@@ -14,6 +14,42 @@ if TYPE_CHECKING:
     from langchain_core.runnables import Runnable
 
 
+def _build_retriever_class():
+    """Lazy construction so langchain_core is only imported when used."""
+    from langchain_core.documents import Document
+    from langchain_core.retrievers import BaseRetriever
+    from pydantic import ConfigDict
+
+    class _PIIGhostRetriever(BaseRetriever):
+        model_config = ConfigDict(arbitrary_types_allowed=True)
+
+        svc: Any
+        project: str = "default"
+        k: int = 5
+
+        async def _aget_relevant_documents(self, query: str, *, run_manager=None) -> list[Document]:
+            result = await self.svc.query(query, project=self.project, k=self.k)
+            return [
+                Document(
+                    page_content=hit.chunk,
+                    metadata={
+                        "doc_id": hit.doc_id,
+                        "file_path": hit.file_path,
+                        "score": hit.score,
+                        "rank": hit.rank,
+                        "project": self.project,
+                    },
+                )
+                for hit in result.hits
+            ]
+
+        def _get_relevant_documents(self, query: str, *, run_manager=None) -> list[Document]:
+            import asyncio
+            return asyncio.run(self._aget_relevant_documents(query))
+
+    return _PIIGhostRetriever
+
+
 class PIIGhostRAG:
     """End-to-end PII-safe RAG chain backed by :class:`PIIGhostService`.
 
@@ -62,3 +98,8 @@ class PIIGhostRAG:
             return result.text
 
         return RunnableLambda(_run)
+
+    @property
+    def retriever(self) -> "BaseRetriever":
+        retriever_cls = _build_retriever_class()
+        return retriever_cls(svc=self._svc, project=self._project)

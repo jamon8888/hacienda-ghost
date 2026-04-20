@@ -59,3 +59,44 @@ def test_anonymizer_project_scoped(svc):
     a_tokens = {e["token"] for e in result_a["entities"]}
     b_tokens = {e["token"] for e in result_b["entities"]}
     assert a_tokens.isdisjoint(b_tokens)
+
+
+def test_retriever_returns_documents(svc, tmp_path):
+    rag = PIIGhostRAG(svc, project="client-a")
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Alice works on GDPR compliance contracts")
+    asyncio.run(rag.ingest(doc))
+
+    from langchain_core.documents import Document
+
+    docs = asyncio.run(rag.retriever.ainvoke("GDPR compliance"))
+    assert isinstance(docs, list)
+    assert all(isinstance(d, Document) for d in docs)
+    assert len(docs) >= 1
+
+
+def test_retriever_metadata_includes_project(svc, tmp_path):
+    rag = PIIGhostRAG(svc, project="client-a")
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Alice works in Paris")
+    asyncio.run(rag.ingest(doc))
+
+    docs = asyncio.run(rag.retriever.ainvoke("Paris"))
+    assert docs[0].metadata["project"] == "client-a"
+    assert "doc_id" in docs[0].metadata
+    assert "score" in docs[0].metadata
+
+
+def test_retriever_scoped_to_project(svc, tmp_path):
+    rag_a = PIIGhostRAG(svc, project="client-a")
+    rag_b = PIIGhostRAG(svc, project="client-b")
+
+    doc = tmp_path / "a.txt"
+    doc.write_text("Alice works on GDPR contracts")
+    asyncio.run(rag_a.ingest(doc))
+
+    # Seed project client-b so it exists
+    asyncio.run(svc.anonymize("seed", project="client-b"))
+
+    docs_b = asyncio.run(rag_b.retriever.ainvoke("GDPR contracts"))
+    assert len(docs_b) == 0
