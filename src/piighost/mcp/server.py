@@ -21,29 +21,39 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
     mcp = FastMCP("piighost", "GDPR-compliant PII anonymization and document retrieval")
 
     @mcp.tool(description="Anonymize text, replacing PII with opaque tokens")
-    async def anonymize_text(text: str, doc_id: str = "") -> dict:
-        result = await svc.anonymize(text, doc_id=doc_id or None)
+    async def anonymize_text(text: str, doc_id: str = "", project: str = "default") -> dict:
+        result = await svc.anonymize(text, doc_id=doc_id or None, project=project)
         return result.model_dump()
 
     @mcp.tool(description="Rehydrate anonymized text back to original PII")
-    async def rehydrate_text(text: str) -> dict:
-        result = await svc.rehydrate(text)
+    async def rehydrate_text(text: str, project: str = "default") -> dict:
+        result = await svc.rehydrate(text, project=project)
         return result.model_dump()
 
     if _indexing_available():
         @mcp.tool(description="Index a file or directory into the retrieval store")
-        async def index_path(path: str, recursive: bool = True, force: bool = False) -> dict:
-            report = await svc.index_path(Path(path), recursive=recursive, force=force)
+        async def index_path(
+            path: str,
+            recursive: bool = True,
+            force: bool = False,
+            project: str = "",
+        ) -> dict:
+            project_arg = project if project else None
+            report = await svc.index_path(
+                Path(path), recursive=recursive, force=force, project=project_arg
+            )
             return report.model_dump()
 
         @mcp.tool(description="Hybrid BM25+vector search over indexed documents")
-        async def query(text: str, k: int = 5) -> dict:
-            result = await svc.query(text, k=k)
+        async def query(text: str, k: int = 5, project: str = "default") -> dict:
+            result = await svc.query(text, k=k, project=project)
             return result.model_dump()
 
     @mcp.tool(description="Full-text search in the PII vault by original value")
-    async def vault_search(q: str, reveal: bool = False) -> list[dict]:
-        entries = await svc.vault_search(q, reveal=reveal)
+    async def vault_search(
+        q: str, reveal: bool = False, project: str = "default"
+    ) -> list[dict]:
+        entries = await svc.vault_search(q, reveal=reveal, project=project)
         return [e.model_dump() for e in entries]
 
     @mcp.tool(description="List vault entries with optional label filter")
@@ -52,21 +62,55 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         limit: int = 100,
         offset: int = 0,
         reveal: bool = False,
+        project: str = "default",
     ) -> list[dict]:
         page = await svc.vault_list(
-            label=label or None, limit=limit, offset=offset, reveal=reveal
+            label=label or None,
+            limit=limit,
+            offset=offset,
+            reveal=reveal,
+            project=project,
         )
         return [e.model_dump(exclude_none=False) for e in page.entries]
 
     @mcp.tool(description="Retrieve a single vault entry by token")
-    async def vault_get(token: str, reveal: bool = False) -> dict | None:
-        entry = await svc.vault_show(token, reveal=reveal)
+    async def vault_get(
+        token: str, reveal: bool = False, project: str = "default"
+    ) -> dict | None:
+        entry = await svc.vault_show(token, reveal=reveal, project=project)
         return entry.model_dump() if entry is not None else None
 
     @mcp.tool(description="Return vault statistics (total entries, by label)")
-    async def vault_stats() -> dict:
-        stats = await svc.vault_stats()
+    async def vault_stats(project: str = "default") -> dict:
+        stats = await svc.vault_stats(project=project)
         return stats.model_dump()
+
+    @mcp.tool(description="List all projects")
+    async def list_projects() -> list[dict]:
+        projects = await svc.list_projects()
+        return [
+            {
+                "name": p.name,
+                "description": p.description,
+                "created_at": p.created_at,
+                "last_accessed_at": p.last_accessed_at,
+            }
+            for p in projects
+        ]
+
+    @mcp.tool(description="Create a new project")
+    async def create_project(name: str, description: str = "") -> dict:
+        info = await svc.create_project(name, description=description)
+        return {
+            "name": info.name,
+            "description": info.description,
+            "created_at": info.created_at,
+        }
+
+    @mcp.tool(description="Delete a project (refuses if non-empty unless force=True)")
+    async def delete_project(name: str, force: bool = False) -> dict:
+        deleted = await svc.delete_project(name, force=force)
+        return {"deleted": deleted, "name": name}
 
     @mcp.tool(description="Check whether the piighost daemon is running")
     async def daemon_status() -> dict:
