@@ -100,3 +100,44 @@ def test_retriever_scoped_to_project(svc, tmp_path):
 
     docs_b = asyncio.run(rag_b.retriever.ainvoke("GDPR contracts"))
     assert len(docs_b) == 0
+
+
+def test_query_without_llm_returns_rehydrated_context(svc, tmp_path):
+    rag = PIIGhostRAG(svc, project="client-a")
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Alice works in Paris on GDPR compliance")
+    asyncio.run(rag.ingest(doc))
+
+    answer = asyncio.run(rag.query("GDPR compliance"))
+    # No LLM: raw rehydrated context. Must contain real PII.
+    assert "Alice" in answer or "Paris" in answer
+
+
+def test_query_with_fake_llm(svc, tmp_path):
+    pytest.importorskip("langchain_core")
+    from langchain_core.language_models import FakeListChatModel
+
+    rag = PIIGhostRAG(svc, project="client-a")
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Alice works in Paris on GDPR compliance contracts")
+    asyncio.run(rag.ingest(doc))
+
+    # Fake LLM returns an answer containing a token that can be rehydrated
+    anon = asyncio.run(rag.anonymizer.ainvoke("Alice works in Paris"))
+    fake_answer = f"According to the context, {anon['entities'][0]['token']} works on contracts."
+    llm = FakeListChatModel(responses=[fake_answer])
+
+    answer = asyncio.run(rag.query("What does Alice do?", llm=llm))
+    # Token should be rehydrated back to "Alice" (or "Paris")
+    assert "Alice" in answer or "Paris" in answer
+
+
+def test_as_chain_returns_runnable(svc):
+    pytest.importorskip("langchain_core")
+    from langchain_core.language_models import FakeListChatModel
+    from langchain_core.runnables import Runnable
+
+    rag = PIIGhostRAG(svc, project="client-a")
+    llm = FakeListChatModel(responses=["anonymized response"])
+    chain = rag.as_chain(llm)
+    assert isinstance(chain, Runnable)

@@ -50,6 +50,23 @@ def _build_retriever_class():
     return _PIIGhostRetriever
 
 
+_DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Answer the user's question based on the provided context.\n"
+    "The context and question contain opaque tokens of the form <LABEL:hash> (e.g., <PERSON:abc123>).\n"
+    "Preserve these tokens EXACTLY in your answer — do not expand, explain, or replace them.\n"
+    "If the context does not contain enough information, say \"I don't know.\""
+)
+
+
+def _build_prompt(*, context: str, question: str) -> list:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    return [
+        SystemMessage(content=_DEFAULT_SYSTEM_PROMPT),
+        HumanMessage(content=f"Context:\n{context}\n\nQuestion: {question}"),
+    ]
+
+
 class PIIGhostRAG:
     """End-to-end PII-safe RAG chain backed by :class:`PIIGhostService`.
 
@@ -103,3 +120,46 @@ class PIIGhostRAG:
     def retriever(self) -> "BaseRetriever":
         retriever_cls = _build_retriever_class()
         return retriever_cls(svc=self._svc, project=self._project)
+
+    async def query(
+        self,
+        text: str,
+        *,
+        k: int = 5,
+        llm: "BaseLanguageModel | None" = None,
+        prompt: Any | None = None,
+    ) -> str:
+        anon = await self._svc.anonymize(text, project=self._project)
+        result = await self._svc.query(anon.anonymized, project=self._project, k=k)
+        context = "\n\n".join(hit.chunk for hit in result.hits)
+
+        if llm is None:
+            rehydrated = await self._svc.rehydrate(
+                context, project=self._project, strict=False
+            )
+            return rehydrated.text
+
+        if prompt is not None:
+            messages = prompt.format_messages(context=context, question=anon.anonymized)
+        else:
+            messages = _build_prompt(context=context, question=anon.anonymized)
+
+        raw_answer = await llm.ainvoke(messages)
+        answer_text = raw_answer.content if hasattr(raw_answer, "content") else str(raw_answer)
+        rehydrated = await self._svc.rehydrate(
+            answer_text, project=self._project, strict=False
+        )
+        return rehydrated.text
+
+    def as_chain(
+        self,
+        llm: "BaseLanguageModel",
+        *,
+        prompt: Any | None = None,
+    ) -> "Runnable[str, str]":
+        from langchain_core.runnables import RunnableLambda
+
+        async def _run(question: str) -> str:
+            return await self.query(question, llm=llm, prompt=prompt)
+
+        return RunnableLambda(_run)
