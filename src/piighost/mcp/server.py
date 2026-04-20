@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 
 from piighost.service.config import ServiceConfig
 from piighost.service.core import PIIGhostService
+from piighost.service.models import VaultEntryModel
 
 
 async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
@@ -40,45 +41,19 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         return [e.model_dump() for e in entries]
 
     @mcp.tool(description="List vault entries with optional label filter")
-    async def vault_list(label: str = "", limit: int = 50, offset: int = 0) -> list[dict]:
-        entries = svc._vault.list_entities(
-            label=label or None, limit=limit, offset=offset
-        )
-        from piighost.service.models import VaultEntryModel
-        return [
-            VaultEntryModel(
-                token=e.token,
-                label=e.label,
-                original_masked=(e.original[:2] + "***" + e.original[-1:] if e.original else None),
-                confidence=e.confidence,
-                first_seen_at=e.first_seen_at,
-                last_seen_at=e.last_seen_at,
-                occurrence_count=e.occurrence_count,
-            ).model_dump()
-            for e in entries
-        ]
+    async def vault_list(label: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
+        page = await svc.vault_list(label=label or None, limit=limit, offset=offset, reveal=False)
+        return [e.model_dump(exclude_none=False) for e in page.entries]
 
     @mcp.tool(description="Retrieve a single vault entry by token")
     async def vault_get(token: str, reveal: bool = False) -> dict | None:
-        entry = svc._vault.get_by_token(token)
-        if entry is None:
-            return None
-        from piighost.service.models import VaultEntryModel
-        return VaultEntryModel(
-            token=entry.token,
-            label=entry.label,
-            original=entry.original if reveal else None,
-            original_masked=(entry.original[:2] + "***" + entry.original[-1:] if entry.original else None),
-            confidence=entry.confidence,
-            first_seen_at=entry.first_seen_at,
-            last_seen_at=entry.last_seen_at,
-            occurrence_count=entry.occurrence_count,
-        ).model_dump()
+        entry = await svc.vault_show(token, reveal=reveal)
+        return entry.model_dump() if entry is not None else None
 
     @mcp.tool(description="Return vault statistics (total entries, by label)")
     async def vault_stats() -> dict:
-        stats = svc._vault.stats()
-        return {"total": stats.total, "by_label": stats.by_label}
+        stats = await svc.vault_stats()
+        return stats.model_dump()
 
     @mcp.tool(description="Check whether the piighost daemon is running")
     async def daemon_status() -> dict:

@@ -3,6 +3,20 @@ import pytest
 from pathlib import Path
 
 
+def test_vault_list_uses_service_masking(tmp_path, monkeypatch):
+    """vault_list must use service._to_entry_model for correct masking, not inline logic."""
+    monkeypatch.setenv("PIIGHOST_EMBEDDER", "stub")
+    monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
+    from piighost.mcp.server import build_mcp
+    mcp, svc = asyncio.run(build_mcp(tmp_path / "vault"))
+    asyncio.run(svc.anonymize("Alice Smith"))
+    page = asyncio.run(svc.vault_list(limit=10, reveal=False))
+    for entry in page.entries:
+        assert entry.original is None  # reveal=False means no raw PII
+        assert entry.original_masked is not None  # masked version present
+    asyncio.run(svc.close())
+
+
 def test_build_mcp_returns_fastmcp_and_service(tmp_path, monkeypatch):
     monkeypatch.setenv("PIIGHOST_EMBEDDER", "stub")
     monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
