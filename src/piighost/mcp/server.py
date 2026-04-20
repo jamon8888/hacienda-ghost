@@ -41,8 +41,15 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         return [e.model_dump() for e in entries]
 
     @mcp.tool(description="List vault entries with optional label filter")
-    async def vault_list(label: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
-        page = await svc.vault_list(label=label or None, limit=limit, offset=offset, reveal=False)
+    async def vault_list(
+        label: str = "",
+        limit: int = 100,
+        offset: int = 0,
+        reveal: bool = False,
+    ) -> list[dict]:
+        page = await svc.vault_list(
+            label=label or None, limit=limit, offset=offset, reveal=reveal
+        )
         return [e.model_dump(exclude_none=False) for e in page.entries]
 
     @mcp.tool(description="Retrieve a single vault entry by token")
