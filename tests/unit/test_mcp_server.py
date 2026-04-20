@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import pytest
 from pathlib import Path
 
@@ -30,6 +31,16 @@ def test_build_mcp_returns_fastmcp_and_service(tmp_path, monkeypatch):
 def test_mcp_has_expected_tools(tmp_path, monkeypatch):
     monkeypatch.setenv("PIIGHOST_EMBEDDER", "stub")
     monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
+
+    real_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name, *args, **kwargs):
+        if name == "sentence_transformers":
+            return object()
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr("importlib.util.find_spec", fake_find_spec)
+
     from piighost.mcp.server import build_mcp
     mcp, svc = asyncio.run(build_mcp(tmp_path / "vault"))
     # get_tools() is async and returns dict[name, Tool]

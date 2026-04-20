@@ -10,6 +10,11 @@ from piighost.service.core import PIIGhostService
 from piighost.service.models import VaultEntryModel
 
 
+def _indexing_available() -> bool:
+    import importlib.util
+    return importlib.util.find_spec("sentence_transformers") is not None
+
+
 async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
     config = ServiceConfig()
     svc = await PIIGhostService.create(vault_dir=vault_dir, config=config)
@@ -25,15 +30,16 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         result = await svc.rehydrate(text)
         return result.model_dump()
 
-    @mcp.tool(description="Index a file or directory into the retrieval store")
-    async def index_path(path: str, recursive: bool = True) -> dict:
-        report = await svc.index_path(Path(path), recursive=recursive)
-        return report.model_dump()
+    if _indexing_available():
+        @mcp.tool(description="Index a file or directory into the retrieval store")
+        async def index_path(path: str, recursive: bool = True, force: bool = False) -> dict:
+            report = await svc.index_path(Path(path), recursive=recursive, force=force)
+            return report.model_dump()
 
-    @mcp.tool(description="Hybrid BM25+vector search over indexed documents")
-    async def query(text: str, k: int = 5) -> dict:
-        result = await svc.query(text, k=k)
-        return result.model_dump()
+        @mcp.tool(description="Hybrid BM25+vector search over indexed documents")
+        async def query(text: str, k: int = 5) -> dict:
+            result = await svc.query(text, k=k)
+            return result.model_dump()
 
     @mcp.tool(description="Full-text search in the PII vault by original value")
     async def vault_search(q: str, reveal: bool = False) -> list[dict]:
