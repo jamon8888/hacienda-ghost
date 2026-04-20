@@ -40,3 +40,26 @@ class PIISafetyViolation(Exception):
 
 class DaemonUnreachable(Exception):
     """Daemon is configured but not reachable; CLI may auto-spawn."""
+
+
+class ProjectNotFound(LookupError):
+    """Raised when a project name is passed to a read operation but does not exist."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(
+            f"project '{name}' does not exist; call list_projects to see available projects"
+        )
+        self.name = name
+
+
+class ProjectNotEmpty(RuntimeError):
+    """Raised when delete_project is called on a non-empty project without force=True."""
+
+    def __init__(self, name: str, doc_count: int, vault_count: int) -> None:
+        super().__init__(
+            f"project '{name}' contains {doc_count} docs and {vault_count} vault entries; "
+            f"pass force=True to delete anyway"
+        )
+        self.name = name
+        self.doc_count = doc_count
+        self.vault_count = vault_count
