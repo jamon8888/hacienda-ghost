@@ -19,12 +19,6 @@ _GENERIC_NAMES = frozenset(
         "projects",
         "data",
         "docs",
-        "alice",
-        "bob",
-        "charlie",
-        "dave",
-        "eve",
-        "frank",
     }
 )
 

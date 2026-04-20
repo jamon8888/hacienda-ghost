@@ -18,7 +18,9 @@ def test_single_generic_path_falls_back_to_default():
 
 
 def test_invalid_chars_fall_back_to_default():
-    assert derive_project_from_path(Path("/Users/alice/my client/docs")) == "default"
+    # All intermediate components are either generic (tmp) or invalid (space in name),
+    # so there's no valid candidate -> returns "default".
+    assert derive_project_from_path(Path("/tmp/my client/docs")) == "default"
 
 
 def test_empty_path_falls_back_to_default():
