@@ -56,6 +56,14 @@ class PIIGhostService:
             anonymizer=Anonymizer(ph_factory),
         )
         self._write_lock = asyncio.Lock()
+        from piighost.indexer.embedder import build_embedder
+        from piighost.indexer.store import ChunkStore
+        from piighost.indexer.retriever import BM25Index
+
+        self._embedder = build_embedder(config.embedder)
+        self._chunk_store = ChunkStore(vault_dir / ".piighost" / "lance")
+        self._bm25 = BM25Index(vault_dir / ".piighost" / "bm25.pkl")
+        self._bm25.load()
 
     @classmethod
     async def create(
@@ -175,6 +183,50 @@ class PIIGhostService:
             )
             for d in dets
         ]
+
+    async def index_path(
+        self, path: Path, *, recursive: bool = True
+    ) -> "IndexReport":
+        import time
+        from piighost.indexer.chunker import chunk_text
+        from piighost.indexer.ingestor import list_document_paths, extract_text
+        from piighost.service.models import IndexReport
+
+        start = time.monotonic()
+        paths = await list_document_paths(path, recursive=recursive)
+        indexed = 0
+        skipped = 0
+        errors: list[str] = []
+
+        for p in paths:
+            try:
+                text = await extract_text(p)
+                if text is None:
+                    skipped += 1
+                    continue
+                result = await self.anonymize(text, doc_id=str(p))
+                anon_text = result.anonymized
+                chunks = chunk_text(anon_text)
+                if not chunks:
+                    skipped += 1
+                    continue
+                vectors = await self._embedder.embed(chunks)
+                self._chunk_store.upsert_chunks(str(p), str(p), chunks, vectors)
+                indexed += 1
+            except Exception as exc:
+                errors.append(f"{p}: {exc}")
+
+        all_records = self._chunk_store.all_records()
+        if all_records:
+            self._bm25.rebuild(all_records)
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        return IndexReport(
+            indexed=indexed,
+            skipped=skipped,
+            errors=errors,
+            duration_ms=duration_ms,
+        )
 
     # ---- vault ops ----
 
