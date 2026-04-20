@@ -51,3 +51,109 @@ class PIIGhostRetriever:
             for hit in result.hits
         ]
         return {"documents": docs}
+
+
+_HAYSTACK_PROMPT_TEMPLATE = """You are a helpful assistant. Answer based on the provided context.
+Both the context and question contain opaque tokens like <LABEL:hash>. Preserve them exactly.
+
+Context:
+{% for doc in documents %}
+{{ doc.content }}
+{% endfor %}
+
+Question: {{ question }}
+"""
+
+
+@component
+class _ServiceQueryAnonymizer:
+    """Anonymize a query via PIIGhostService (project-scoped)."""
+
+    def __init__(self, svc: PIIGhostService, *, project: str = "default") -> None:
+        self._svc = svc
+        self._project = project
+
+    @component.output_types(query=str)
+    def run(self, text: str) -> dict:
+        return run_coroutine_sync(self._arun(text))
+
+    @component.output_types(query=str)
+    async def run_async(self, text: str) -> dict:
+        return await self._arun(text)
+
+    async def _arun(self, text: str) -> dict:
+        result = await self._svc.anonymize(text, project=self._project)
+        return {"query": result.anonymized}
+
+
+@component
+class _ServiceRehydrator:
+    """Rehydrate text via PIIGhostService (project-scoped)."""
+
+    def __init__(self, svc: PIIGhostService, *, project: str = "default") -> None:
+        self._svc = svc
+        self._project = project
+
+    @component.output_types(text=str)
+    def run(self, text: str | None = None) -> dict:
+        if text is None:
+            return {"text": ""}
+        return run_coroutine_sync(self._arun(text))
+
+    @component.output_types(text=str)
+    async def run_async(self, text: str | None = None) -> dict:
+        if text is None:
+            return {"text": ""}
+        return await self._arun(text)
+
+    async def _arun(self, text: str) -> dict:
+        result = await self._svc.rehydrate(text, project=self._project, strict=False)
+        return {"text": result.text}
+
+
+def build_piighost_rag(
+    svc: PIIGhostService,
+    *,
+    project: str = "default",
+    llm_generator: Any | None = None,
+    top_k: int = 5,
+) -> Pipeline:
+    """Build a pre-wired Haystack :class:`Pipeline` for PII-safe RAG.
+
+    Components and connections (with LLM):
+
+        query_anonymizer -> retriever -> prompt_builder -> llm -> rehydrator
+
+    Without an LLM the pipeline stops at ``prompt_builder``. This lets tests
+    assert wiring without exercising an LLM.
+    """
+    from haystack.components.builders import PromptBuilder
+
+    pipeline = Pipeline()
+    pipeline.add_component(
+        "query_anonymizer", _ServiceQueryAnonymizer(svc, project=project)
+    )
+    pipeline.add_component(
+        "retriever", PIIGhostRetriever(svc, project=project, top_k=top_k)
+    )
+    pipeline.add_component(
+        "prompt_builder",
+        PromptBuilder(
+            template=_HAYSTACK_PROMPT_TEMPLATE,
+            required_variables=["question", "documents"],
+        ),
+    )
+    pipeline.add_component(
+        "rehydrator", _ServiceRehydrator(svc, project=project)
+    )
+    if llm_generator is not None:
+        pipeline.add_component("llm", llm_generator)
+
+    pipeline.connect("query_anonymizer.query", "retriever.query")
+    pipeline.connect("query_anonymizer.query", "prompt_builder.question")
+    pipeline.connect("retriever.documents", "prompt_builder.documents")
+    if llm_generator is not None:
+        pipeline.connect("prompt_builder.prompt", "llm.prompt")
+        pipeline.connect("llm.replies", "rehydrator.text")
+
+    return pipeline

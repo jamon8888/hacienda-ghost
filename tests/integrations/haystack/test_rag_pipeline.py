@@ -57,3 +57,42 @@ def test_retriever_metadata_includes_project(svc, tmp_path):
     docs = retriever.run(query="Paris")["documents"]
     assert docs[0].meta["project"] == "client-a"
     assert "doc_id" in docs[0].meta
+
+
+def test_build_pipeline_without_llm(svc):
+    from haystack import Pipeline
+    from piighost.integrations.haystack.rag import build_piighost_rag
+
+    pipeline = build_piighost_rag(svc, project="client-a")
+    assert isinstance(pipeline, Pipeline)
+    names = set(pipeline.graph.nodes)
+    assert "query_anonymizer" in names
+    assert "retriever" in names
+    assert "prompt_builder" in names
+    assert "rehydrator" in names
+
+
+def test_build_pipeline_with_llm(svc):
+    from haystack import component as _component
+    from piighost.integrations.haystack.rag import build_piighost_rag
+
+    @_component
+    class _FakeGenerator:
+        @_component.output_types(replies=list[str])
+        def run(self, prompt: str) -> dict:
+            return {"replies": [prompt]}
+
+    pipeline = build_piighost_rag(svc, project="client-a", llm_generator=_FakeGenerator())
+    assert "llm" in pipeline.graph.nodes
+
+
+def test_pipeline_runs_without_llm(svc, tmp_path):
+    from piighost.integrations.haystack.rag import build_piighost_rag
+
+    doc = tmp_path / "doc.txt"
+    doc.write_text("Alice works in Paris on GDPR compliance")
+    asyncio.run(svc.index_path(doc, project="client-a"))
+
+    pipeline = build_piighost_rag(svc, project="client-a")
+    output = pipeline.run({"query_anonymizer": {"text": "GDPR compliance"}})
+    assert "prompt_builder" in output
