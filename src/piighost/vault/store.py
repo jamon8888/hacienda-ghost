@@ -31,6 +31,16 @@ class VaultStats:
     by_label: dict[str, int]
 
 
+@dataclass(frozen=True)
+class IndexedFileRecord:
+    doc_id: str
+    file_path: str
+    content_hash: str
+    mtime: float
+    indexed_at: int
+    chunk_count: int
+
+
 class Vault:
     """Thread-safe only for single-connection use. One `Vault` per process."""
 
@@ -137,6 +147,88 @@ class Vault:
             (f"%{query}%", limit),
         ).fetchall()
         return [self._row_to_entry(r) for r in rows]
+
+    def upsert_indexed_file(
+        self,
+        doc_id: str,
+        file_path: str,
+        content_hash: str,
+        mtime: float,
+        chunk_count: int,
+    ) -> None:
+        now = int(time.time())
+        self._conn.execute(
+            "DELETE FROM indexed_files WHERE file_path = ? AND doc_id != ?",
+            (file_path, doc_id),
+        )
+        self._conn.execute(
+            """
+            INSERT INTO indexed_files
+                (doc_id, file_path, content_hash, mtime, indexed_at, chunk_count)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(doc_id) DO UPDATE SET
+                file_path      = excluded.file_path,
+                content_hash   = excluded.content_hash,
+                mtime          = excluded.mtime,
+                indexed_at     = excluded.indexed_at,
+                chunk_count    = excluded.chunk_count
+            """,
+            (doc_id, file_path, content_hash, mtime, now, chunk_count),
+        )
+
+    def get_indexed_file_by_path(self, file_path: str) -> IndexedFileRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM indexed_files WHERE file_path = ?", (file_path,)
+        ).fetchone()
+        return self._row_to_indexed_file(row) if row else None
+
+    def get_indexed_file(self, doc_id: str) -> IndexedFileRecord | None:
+        row = self._conn.execute(
+            "SELECT * FROM indexed_files WHERE doc_id = ?", (doc_id,)
+        ).fetchone()
+        return self._row_to_indexed_file(row) if row else None
+
+    def delete_indexed_file(self, doc_id: str) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM indexed_files WHERE doc_id = ?", (doc_id,)
+        )
+        return cur.rowcount > 0
+
+    def list_indexed_files(
+        self, *, limit: int = 100, offset: int = 0
+    ) -> list[IndexedFileRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM indexed_files ORDER BY indexed_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [self._row_to_indexed_file(r) for r in rows]
+
+    def count_indexed_files(self) -> int:
+        (count,) = self._conn.execute("SELECT COUNT(*) FROM indexed_files").fetchone()
+        return count
+
+    def total_chunk_count(self) -> int:
+        (total,) = self._conn.execute(
+            "SELECT COALESCE(SUM(chunk_count), 0) FROM indexed_files"
+        ).fetchone()
+        return total
+
+    def delete_doc_entities(self, doc_id: str) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM doc_entities WHERE doc_id = ?", (doc_id,)
+        )
+        return cur.rowcount
+
+    @staticmethod
+    def _row_to_indexed_file(row: sqlite3.Row) -> IndexedFileRecord:
+        return IndexedFileRecord(
+            doc_id=row["doc_id"],
+            file_path=row["file_path"],
+            content_hash=row["content_hash"],
+            mtime=row["mtime"],
+            indexed_at=row["indexed_at"],
+            chunk_count=row["chunk_count"],
+        )
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> VaultEntry:
