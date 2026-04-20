@@ -72,3 +72,16 @@ class QueryResult(BaseModel):
     query: str
     hits: list[QueryHit]
     k: int
+
+
+class IndexedFileEntry(BaseModel):
+    doc_id: str
+    file_path: str
+    indexed_at: int
+    chunk_count: int
+
+
+class IndexStatus(BaseModel):
+    total_docs: int
+    total_chunks: int
+    files: list[IndexedFileEntry]

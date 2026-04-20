@@ -19,6 +19,8 @@ from piighost.service.models import (
     AnonymizeResult,
     DetectionResult,
     EntityRef,
+    IndexedFileEntry,
+    IndexStatus,
     RehydrateResult,
     VaultEntryModel,
     VaultPage,
@@ -273,6 +275,27 @@ class PIIGhostService:
         else:
             self._bm25.clear()
         return True
+
+    async def index_status(
+        self, *, limit: int = 100, offset: int = 0
+    ) -> IndexStatus:
+        total_docs = self._vault.count_indexed_files()
+        total_chunks = self._vault.total_chunk_count()
+        files = self._vault.list_indexed_files(limit=limit, offset=offset)
+        entries = [
+            IndexedFileEntry(
+                doc_id=f.doc_id,
+                file_path=f.file_path,
+                indexed_at=f.indexed_at,
+                chunk_count=f.chunk_count,
+            )
+            for f in files
+        ]
+        return IndexStatus(
+            total_docs=total_docs,
+            total_chunks=total_chunks,
+            files=entries,
+        )
 
     async def query(self, text: str, *, k: int = 5) -> "QueryResult":
         from piighost.indexer.retriever import reciprocal_rank_fusion
