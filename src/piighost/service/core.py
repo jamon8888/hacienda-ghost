@@ -49,6 +49,7 @@ class _ProjectService:
         audit: AuditLogger,
         detector: _Detector,
         ph_factory: HashPlaceholderFactory,
+        reranker=None,
     ) -> None:
         self._project_dir = project_dir
         self._project_name = project_name
@@ -70,6 +71,7 @@ class _ProjectService:
         self._chunk_store = ChunkStore(self._project_dir / ".piighost" / "lance")
         self._bm25 = BM25Index(self._project_dir / ".piighost" / "bm25.pkl")
         self._bm25.load()
+        self._reranker = reranker
 
     @classmethod
     async def create(
@@ -80,6 +82,7 @@ class _ProjectService:
         config: ServiceConfig | None = None,
         detector: _Detector | None = None,
         placeholder_salt: str = "",
+        reranker=None,
     ) -> "_ProjectService":
         config = config or ServiceConfig.default()
         project_dir.mkdir(parents=True, exist_ok=True)
@@ -87,6 +90,8 @@ class _ProjectService:
         audit = AuditLogger(project_dir / "audit.log")
         if detector is None:
             detector = await _build_default_detector(config)
+        if reranker is None:
+            reranker = await _build_default_reranker(config)
         return cls(
             project_dir=project_dir,
             project_name=project_name,
@@ -95,6 +100,7 @@ class _ProjectService:
             audit=audit,
             detector=detector,
             ph_factory=HashPlaceholderFactory(salt=placeholder_salt),
+            reranker=reranker,
         )
 
     # ---- core ops ----
@@ -314,19 +320,29 @@ class _ProjectService:
         *,
         k: int = 5,
         filter: "QueryFilter | None" = None,
+        rerank: bool = False,
+        top_n: int = 20,
     ) -> "QueryResult":
         from piighost.indexer.retriever import reciprocal_rank_fusion
         from piighost.service.models import QueryHit, QueryResult
 
+        if rerank and self._reranker is None:
+            raise ValueError(
+                "rerank=True but no reranker configured; "
+                "set ServiceConfig.reranker.backend to 'cross_encoder'"
+            )
+
+        fetch_k = max(top_n, k) if rerank else k
+
         anon_result = await self.anonymize(text)
         anon_query = anon_result.anonymized
 
-        bm25_hits = self._bm25.search(anon_query, k=k * 2, filter=filter)
+        bm25_hits = self._bm25.search(anon_query, k=fetch_k * 2, filter=filter)
         query_vecs = await self._embedder.embed([anon_query])
-        vec_hits_raw = self._chunk_store.vector_search(query_vecs[0], k=k * 2, filter=filter)
+        vec_hits_raw = self._chunk_store.vector_search(query_vecs[0], k=fetch_k * 2, filter=filter)
         vector_hits = [(r["chunk_id"], r.get("_distance", 0.0)) for r in vec_hits_raw]
 
-        fused = reciprocal_rank_fusion(bm25_hits, vector_hits, rrf_k=60)[:k]
+        fused = reciprocal_rank_fusion(bm25_hits, vector_hits, rrf_k=60)[:fetch_k]
 
         all_records = {r["chunk_id"]: r for r in self._chunk_store.all_records()}
         hits: list[QueryHit] = []
@@ -343,6 +359,10 @@ class _ProjectService:
                     rank=rank,
                 )
             )
+
+        if rerank:
+            hits = await self._reranker.rerank(text, hits)
+            hits = hits[:k]
 
         return QueryResult(query=text, hits=hits, k=k)
 
@@ -515,9 +535,11 @@ class PIIGhostService:
         k: int = 5,
         project: str = "default",
         filter: "QueryFilter | None" = None,
+        rerank: bool = False,
+        top_n: int = 20,
     ):
         svc = await self._get_project(project)
-        return await svc.query(text, k=k, filter=filter)
+        return await svc.query(text, k=k, filter=filter, rerank=rerank, top_n=top_n)
 
     async def index_status(self, *, limit: int = 100, offset: int = 0, project: str = "default"):
         svc = await self._get_project(project)
@@ -605,6 +627,15 @@ class PIIGhostService:
             await svc.close()
         self._cache.clear()
         self._registry.close()
+
+
+async def _build_default_reranker(config: ServiceConfig):
+    if config.reranker.backend == "none":
+        return None
+    if config.reranker.backend == "cross_encoder":
+        from piighost.reranker.cross_encoder import CrossEncoderReranker
+        return CrossEncoderReranker(config.reranker.cross_encoder_model)
+    raise NotImplementedError(f"reranker backend {config.reranker.backend!r}")
 
 
 async def _build_default_detector(config: ServiceConfig) -> _Detector:

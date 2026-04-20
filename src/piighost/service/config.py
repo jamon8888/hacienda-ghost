@@ -47,6 +47,12 @@ class EmbedderSection(BaseModel):
     mistral_model: str = "mistral-embed"
 
 
+class RerankerSection(BaseModel):
+    backend: Literal["none", "cross_encoder"] = "none"
+    cross_encoder_model: str = "BAAI/bge-reranker-base"
+    top_n: int = 20
+
+
 class IndexSection(BaseModel):
     store: Literal["lancedb"] = "lancedb"
     chunk_size: int = 512
@@ -72,6 +78,7 @@ class ServiceConfig(BaseModel):
     vault: VaultSection = Field(default_factory=VaultSection)
     detector: DetectorSection = Field(default_factory=DetectorSection)
     embedder: EmbedderSection = Field(default_factory=EmbedderSection)
+    reranker: RerankerSection = Field(default_factory=RerankerSection)
     index: IndexSection = Field(default_factory=IndexSection)
     daemon: DaemonSection = Field(default_factory=DaemonSection)
     safety: SafetySection = Field(default_factory=SafetySection)
