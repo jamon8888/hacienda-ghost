@@ -12,6 +12,12 @@
 
 **Target repo layout:** `C:\Users\NMarchitecte\Documents\hacienda\` (new, separate repo).
 
+**Cowork contract notes (must follow):**
+- **Skills are passive markdown.** `skills/<name>/SKILL.md` frontmatter accepts only `name` and `description`. No `allowed-tools`, no Python, no executables. Skills describe procedure; tool availability comes from `.mcp.json` at the session level and from commands/agents.
+- **Commands can invoke tools** via `allowed-tools`.
+- **Agents can invoke tools** via `tools`.
+- **Executable code lives in** `hooks/`, `bin/`, `scripts/` — never in `skills/`.
+
 ---
 
 ## File Structure (final target)
@@ -1417,6 +1423,10 @@ SKILLS = [
     ROOT / "skills" / "redact-outbound" / "SKILL.md",
 ]
 
+# Cowork skill contract: only `name` and `description` allowed. Anything else
+# (`allowed-tools`, `tools`, shebangs, exec bits) is a plugin validation error.
+SKILL_FRONTMATTER_ALLOWED_KEYS = {"name", "description"}
+
 
 def _parse_frontmatter(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
@@ -1425,32 +1435,42 @@ def _parse_frontmatter(path: Path) -> dict:
     return yaml.safe_load(fm)
 
 
-def test_all_skills_have_description():
+def test_all_skills_have_name_and_description():
     for path in SKILLS:
         if not path.is_file():
             continue
         fm = _parse_frontmatter(path)
-        assert "description" in fm
+        assert "name" in fm, f"{path} missing name"
+        assert "description" in fm, f"{path} missing description"
         assert len(fm["description"]) >= 40
 
 
-def test_knowledge_base_allowed_tools_contract():
-    path = ROOT / "skills" / "knowledge-base" / "SKILL.md"
-    fm = _parse_frontmatter(path)
-    expected = {
-        "mcp__hacienda__index_path",
-        "mcp__hacienda__hybrid_search",
-        "mcp__hacienda__vault_get",
-        "ReadMcpResourceTool",
-    }
-    assert expected.issubset(set(fm["allowed-tools"]))
+def test_skill_frontmatter_has_no_forbidden_keys():
+    """Skills are passive markdown — no allowed-tools, tools, or other fields."""
+    for path in SKILLS:
+        if not path.is_file():
+            continue
+        fm = _parse_frontmatter(path)
+        forbidden = set(fm.keys()) - SKILL_FRONTMATTER_ALLOWED_KEYS
+        assert not forbidden, (
+            f"{path}: forbidden frontmatter keys {forbidden} "
+            f"(skills accept only {SKILL_FRONTMATTER_ALLOWED_KEYS})"
+        )
 
 
-def test_knowledge_base_body_mentions_citations():
+def test_knowledge_base_body_mentions_citations_and_status_resource():
     path = ROOT / "skills" / "knowledge-base" / "SKILL.md"
     body = path.read_text(encoding="utf-8").split("---\n", 2)[2]
     assert "cite" in body.lower() or "citation" in body.lower()
     assert "hacienda://kb/status" in body
+
+
+def test_knowledge_base_body_references_required_mcp_tools():
+    """Tool *names* appear in the prose (guidance), not in frontmatter (forbidden)."""
+    path = ROOT / "skills" / "knowledge-base" / "SKILL.md"
+    body = path.read_text(encoding="utf-8").split("---\n", 2)[2]
+    for tool in ("mcp__hacienda__hybrid_search", "mcp__hacienda__index_path"):
+        assert tool in body, f"knowledge-base skill body must reference {tool}"
 ```
 
 - [ ] **Step 2: Run test — expect FAIL**
@@ -1464,16 +1484,12 @@ Expected: 3 tests fail or skip (files missing).
 
 ```markdown
 ---
+name: knowledge-base
 description: >
   Search and answer questions from the user's current client folder using
   hybrid BM25 + semantic vector retrieval. Use whenever the user asks about
   documents, emails, contracts, notes, or any content in the folder Cowork
   is currently pointed at. Always cite sources with file paths and excerpts.
-allowed-tools:
-  - mcp__hacienda__index_path
-  - mcp__hacienda__hybrid_search
-  - mcp__hacienda__vault_get
-  - ReadMcpResourceTool
 ---
 
 # Knowledge-base over the active Cowork folder
@@ -1579,6 +1595,7 @@ Expected: FileNotFoundError.
 
 ```markdown
 ---
+name: redact-outbound
 description: >
   Understand how hacienda's redacted-transit placeholders work so you can
   draft emails, documents, and messages that refer to real-world entities
@@ -2520,7 +2537,18 @@ Expected: 2 passed.
 
 - [ ] **Step 4: Write `skills/knowledge-base/SKILL.fr.md`**
 
-French translation of the knowledge-base skill. Same frontmatter structure with French `description`, same section headings translated (`## 1. Verifier l'etat de l'index d'abord`, etc.). Code/tool names stay in English (they're identifiers, not prose).
+French translation of the knowledge-base skill. Frontmatter carries **only** `name: knowledge-base` and a French `description:` (Cowork skill contract — no other keys). Same section headings translated (`## 1. Verifier l'etat de l'index d'abord`, etc.). Code/tool names stay in English (they're identifiers, not prose).
+
+Also extend `tests/test_skill_frontmatter.py` — append the FR files to `SKILLS`:
+```python
+SKILLS = [
+    ROOT / "skills" / "knowledge-base" / "SKILL.md",
+    ROOT / "skills" / "knowledge-base" / "SKILL.fr.md",
+    ROOT / "skills" / "redact-outbound" / "SKILL.md",
+    ROOT / "skills" / "redact-outbound" / "SKILL.fr.md",
+]
+```
+so the frontmatter contract is enforced on both language variants.
 
 Key translations:
 - "Check index status first" → "Verifier l'etat de l'index d'abord"
@@ -2970,7 +2998,8 @@ No gaps. Every spec requirement maps to at least one task.
 - `resolve_project_name(folder: Path) -> str` consistent across Tasks 3, 6, 7.
 - `ensure_vault_key(backend, *, service, account) -> str` consistent across Tasks 15, 16.
 - Env vars consistent: `CLAUDE_PLUGIN_DIR`, `HACIENDA_ACTIVE_FOLDER`, `HACIENDA_DATA_DIR` used identically everywhere.
-- MCP tool names: `mcp__hacienda__hybrid_search`, `mcp__hacienda__index_path`, `mcp__hacienda__vault_get` — same spellings in hooks.json matcher, SKILL.md allowed-tools, and command allowed-tools.
+- MCP tool names: `mcp__hacienda__hybrid_search`, `mcp__hacienda__index_path`, `mcp__hacienda__vault_get` — same spellings in hooks.json matcher, SKILL.md prose guidance, and command `allowed-tools`.
+- Cowork skill contract respected: SKILL.md frontmatter carries only `name` and `description`; tool invocation happens through `.mcp.json` session-level tools (used by commands with `allowed-tools` and by the redaction-agent with `tools`).
 - `hacienda://kb/status` resource URI used consistently.
 
 All checks pass. No fixes needed.
