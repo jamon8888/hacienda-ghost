@@ -1,6 +1,6 @@
 # Hacienda Ghost
 
-> **Le fantôme qui protège vos données dans votre hacienda numérique.**
+> **protège vos données dans votre hacienda numérique.**
 
 [![CI](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml/badge.svg)](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml)
 [![Docker](https://github.com/jamon8888/hacienda-ghost/actions/workflows/docker.yml/badge.svg)](https://github.com/jamon8888/hacienda-ghost/actions/workflows/docker.yml)
@@ -10,7 +10,7 @@
 [![Conformité RGPD](https://img.shields.io/badge/conforme-RGPD-blue.svg)](#conformité-rgpd--ai-act)
 [![Images signées cosign](https://img.shields.io/badge/images-signées%20cosign-4B32C3.svg)](#vérification-de-la-signature-dimage)
 
-**Hacienda Ghost** est un middleware de souveraineté des données pour agents IA. Il détecte les informations personnelles (PII) dans vos prompts, les remplace par des jetons opaques avant envoi au LLM, puis les réhydrate dans la réponse. **Vos données sensibles ne quittent jamais votre poste.**
+**Hacienda Ghost** est un middleware de souveraineté des données pour agents IA. Il détecte les informations personnelles (PII) dans vos prompts, vos documents les remplace par des variantes  opaques avant envoi au LLM, puis les réhydrate dans la réponse. **Vos données sensibles ne quittent jamais votre poste.**
 
 Conçu pour les professionnels européens — avocats, médecins, notaires, DPO, cabinets de conseil — soumis au **RGPD** et à l'**AI Act** (Règlement IA européen, 2024/1689).
 
@@ -20,11 +20,11 @@ Conçu pour les professionnels européens — avocats, médecins, notaires, DPO,
 
 | Profession | Ce que Hacienda Ghost protège |
 |---|---|
-| 👨‍⚖️ **Avocats** | Noms de clients, montants, adresses, dates d'audience, références de dossiers |
-| 👨‍⚕️ **Médecins** | Identités de patients, diagnostics, numéros de sécurité sociale, antécédents |
-| 📋 **Notaires** | Parties prenantes, cadastres, IBAN, clauses familiales sensibles |
-| 🔐 **DPO & RSSI** | Toute PII avant envoi vers un LLM hors UE, avec journal d'audit complet |
-| 🏢 **Cabinets de conseil** | Données clients, secrets industriels, informations contractuelles |
+| **Avocats** | Noms de clients, montants, adresses, dates d'audience, références de dossiers |
+| **Médecins** | Identités de patients, diagnostics, numéros de sécurité sociale, antécédents |
+| **Notaires** | Parties prenantes, cadastres, IBAN, clauses familiales sensibles |
+| **DPO & RSSI** | Toute PII avant envoi vers un LLM hors UE, avec journal d'audit complet |
+| **Cabinets de conseil** | Données clients, secrets industriels, informations contractuelles |
 
 Le principe est simple : **les LLM ne voient que des jetons opaques**. Vous gardez la maîtrise, vos clients gardent leur confidentialité, et vous restez conformes.
 
@@ -820,12 +820,6 @@ Le hook pre-push exécute automatiquement la suite complète avant de pousser su
 
 ---
 
-## Écosystème
-
-- **[piighost](https://pypi.org/project/piighost/)** — la bibliothèque Python (ce dépôt)
-- **[piighost-api](https://github.com/Athroniaeth/piighost-api)** — serveur REST pour inférence d'anonymisation. Charge un pipeline piighost côté serveur et expose `anonymize`/`deanonymize` via HTTP ; les clients n'ont besoin que d'un client HTTP léger.
-- **[piighost-chat](https://github.com/Athroniaeth/piighost-chat)** — application de démo montrant des conversations IA confidentielles. Utilise `PIIAnonymizationMiddleware` avec LangChain pour anonymiser avant le LLM et réhydrater après. SvelteKit + Litestar + Docker Compose.
-
 ### Notes complémentaires
 
 - Le modèle GLiNER2 est téléchargé depuis HuggingFace au premier usage (~500 Mo).
@@ -838,13 +832,12 @@ Le hook pre-push exécute automatiquement la suite complète avant de pousser su
 
 **Licence** : [MIT](LICENSE) — utilisation libre, y compris commerciale.
 
-**Documentation** : [athroniaeth.github.io/piighost](https://athroniaeth.github.io/piighost/)
 
-**Issues** : [GitHub Issues (Athroniaeth)](https://github.com/Athroniaeth/piighost/issues) · [GitHub Issues (jamon8888)](https://github.com/jamon8888/hacienda-ghost/issues)
+**Issues** : [GitHub Issues (jamon8888)](https://github.com/jamon8888/hacienda-ghost/issues)
 
 **Sécurité** : pour signaler une vulnérabilité de manière responsable, voir [SECURITY.md](SECURITY.md).
 
-**Contact** : emmanuel.mixtec@gmail.com
+**Contact** : rubio.jamin@gmail.com
 
 ---
 
