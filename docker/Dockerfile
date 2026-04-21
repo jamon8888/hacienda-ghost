@@ -3,8 +3,8 @@
 # =============================================================================
 # Stage 1: builder — install piighost into a venv we can copy into distroless
 # =============================================================================
-# TODO: pin to real digest before publish — fetch via `docker buildx imagetools inspect python:3.12-slim-bookworm`
-FROM python:3.12-slim-bookworm@sha256:0000000000000000000000000000000000000000000000000000000000000000 AS builder
+# Pinned digest — refresh via `docker buildx imagetools inspect python:3.12-slim-bookworm`
+FROM python:3.12-slim-bookworm@sha256:d97792894a6a4162cae14da44542a83c75e56c77a27b92d58f3f83b7bc961292 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -40,8 +40,8 @@ RUN echo "piighost:x:10001:10001::/var/lib/piighost:/sbin/nologin" >> /etc/passw
 # =============================================================================
 # Stage 2: slim — distroless runtime, no shell, no package manager
 # =============================================================================
-# TODO: pin to real digest before publish — fetch via `docker buildx imagetools inspect gcr.io/distroless/python3-debian12:nonroot`
-FROM gcr.io/distroless/python3-debian12:nonroot@sha256:0000000000000000000000000000000000000000000000000000000000000000 AS slim
+# Pinned digest — refresh via `docker buildx imagetools inspect gcr.io/distroless/python3-debian12:nonroot`
+FROM gcr.io/distroless/python3-debian12:nonroot@sha256:7d1042ce588ab97019fe95c24ffca7bc5a82ccdac572511d5e09bda4435c89c5 AS slim
 
 # Override the default nonroot UID (65532) with the piighost UID (10001)
 COPY --from=builder /etc/passwd.piighost /etc/passwd
@@ -70,8 +70,8 @@ CMD ["mcp"]
 # =============================================================================
 # Stage 3: full — chainguard python with PyTorch + GLiNER + LanceDB
 # =============================================================================
-# TODO: pin to real digest before publish — fetch via `docker buildx imagetools inspect cgr.dev/chainguard/python:latest-dev`
-FROM cgr.dev/chainguard/python:latest-dev@sha256:0000000000000000000000000000000000000000000000000000000000000000 AS full
+# Pinned digest — refresh via `docker buildx imagetools inspect cgr.dev/chainguard/python:latest-dev`
+FROM cgr.dev/chainguard/python:latest-dev@sha256:770e5a8712f63e81753ff2e8c0ed0e88e1cf06c103628c7e6b1277375cbb412e AS full
 
 USER root
 

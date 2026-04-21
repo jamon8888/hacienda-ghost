@@ -3374,6 +3374,10 @@ cache = [
 client = [
     { name = "httpx" },
 ]
+docker = [
+    { name = "httpx" },
+    { name = "pyyaml" },
+]
 faker = [
     { name = "faker" },
 ]
@@ -3488,6 +3492,7 @@ requires-dist = [
     { name = "haystack-ai", marker = "extra == 'haystack'", specifier = ">=2.8" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "httpx", marker = "extra == 'client'", specifier = ">=0.28" },
+    { name = "httpx", marker = "extra == 'docker'", specifier = ">=0.28" },
     { name = "kreuzberg", marker = "extra == 'index'", specifier = ">=0.5" },
     { name = "lancedb", marker = "extra == 'index'", specifier = ">=0.15" },
     { name = "lancedb", marker = "extra == 'langchain-lancedb'", specifier = ">=0.15" },
@@ -3511,6 +3516,7 @@ requires-dist = [
     { name = "portalocker", specifier = ">=2.8" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "pydantic", specifier = ">=2.7" },
+    { name = "pyyaml", marker = "extra == 'docker'", specifier = ">=6" },
     { name = "rank-bm25", marker = "extra == 'index'", specifier = ">=0.2.2" },
     { name = "rich", specifier = ">=13.7" },
     { name = "sentence-transformers", marker = "extra == 'haystack-embeddings-local'", specifier = ">=3.3" },
@@ -3525,7 +3531,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["gliner2", "langchain", "faker", "cache", "middleware", "client", "spacy", "transformers", "llm", "haystack", "haystack-lancedb", "haystack-embeddings-local", "haystack-embeddings-mistral", "index", "mcp", "langchain-lancedb", "langchain-kreuzberg", "langchain-embeddings-local", "langchain-embeddings-mistral", "all"]
+provides-extras = ["docker", "gliner2", "langchain", "faker", "cache", "middleware", "client", "spacy", "transformers", "llm", "haystack", "haystack-lancedb", "haystack-embeddings-local", "haystack-embeddings-mistral", "index", "mcp", "langchain-lancedb", "langchain-kreuzberg", "langchain-embeddings-local", "langchain-embeddings-mistral", "all"]
 
 [package.metadata.requires-dev]
 dev = [
