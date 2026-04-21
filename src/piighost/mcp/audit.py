@@ -23,7 +23,7 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 class SessionAudit:
     def __init__(self, *, root: Path, session_id: str) -> None:
         if not _SESSION_ID_RE.match(session_id):
-            raise ValueError(f"invalid session id: {session_id!r}")
+            raise ValueError("invalid session_id: must match ^[A-Za-z0-9._-]{1,128}$")
         self._file = root / "sessions" / f"{session_id}.audit.jsonl"
         self._file.parent.mkdir(parents=True, exist_ok=True)
 
