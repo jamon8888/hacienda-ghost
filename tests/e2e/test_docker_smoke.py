@@ -4,7 +4,10 @@ Requires a running `docker compose --profile workstation up -d` stack.
 CI manages the lifecycle; locally, run:
 
     docker compose --profile workstation up -d --wait
-    pytest tests/e2e/test_docker_smoke.py -v
+    PIIGHOST_E2E=1 pytest tests/e2e/test_docker_smoke.py -v
+
+Tests in this module are skipped unless ``PIIGHOST_E2E`` is set (so the
+regular ``pytest`` run stays hermetic — no Docker needed).
 """
 from __future__ import annotations
 
@@ -15,6 +18,11 @@ import httpx
 import pytest
 
 MCP_URL = os.environ.get("PIIGHOST_MCP_URL", "http://127.0.0.1:8765")
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("PIIGHOST_E2E"),
+    reason="E2E smoke requires a live Docker stack; set PIIGHOST_E2E=1 to run",
+)
 
 
 @pytest.fixture(scope="module")

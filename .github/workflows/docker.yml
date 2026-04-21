@@ -105,6 +105,8 @@ jobs:
           cp .env.example .env
           docker compose --profile workstation up -d --wait
       - name: Run E2E smoke
+        env:
+          PIIGHOST_E2E: "1"
         run: |
           python -m pytest tests/e2e/test_docker_smoke.py -v
       - name: Tear down
