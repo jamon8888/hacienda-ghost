@@ -17,6 +17,7 @@ from piighost.cli.commands.daemon import daemon_app
 from piighost.cli.commands.projects import app as projects_app
 from piighost.cli.commands.vault import vault_app
 from piighost.cli.docker_cmd import app as docker_app
+from piighost.cli.self_update import app as self_update_app
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -37,3 +38,4 @@ app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(projects_app, name="projects")
 app.add_typer(docker_app, name="docker")
+app.add_typer(self_update_app, name="self-update")
