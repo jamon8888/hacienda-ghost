@@ -54,3 +54,27 @@ class TestIndexStatusResource:
             assert isinstance(data["errors"], list)
         finally:
             await svc.close()
+
+
+@pytest.mark.asyncio
+class TestFolderStatusResource:
+    async def test_per_folder_status_uses_project_hash(self, tmp_path: Path) -> None:
+        import base64
+        import json
+        config = ServiceConfig(detector=DetectorSection(backend="regex_only"))
+        mcp, svc = await build_mcp(vault_dir=tmp_path / "vault", config=config)
+        try:
+            folder = str(tmp_path / "clients" / "ACME")
+            b64 = base64.urlsafe_b64encode(folder.encode()).decode().rstrip("=")
+            # FastMCP parameterised resources: get_resource_template is async.
+            template = await mcp.get_resource_template("piighost://folders/{b64_path}/status")
+            uri = f"piighost://folders/{b64}/status"
+            resource = await template.create_resource(uri=uri, params={"b64_path": b64})
+            assert resource is not None
+            payload = await resource.read()
+            data = json.loads(payload)
+            assert data["folder"] == folder
+            assert data["project"].startswith("acme-")
+            assert data["state"] in {"ready", "indexing", "error", "empty"}
+        finally:
+            await svc.close()

@@ -188,6 +188,38 @@ async def build_mcp(vault_dir: Path, config: ServiceConfig | None = None) -> tup
         }
         return json.dumps(payload)
 
+    @mcp.resource("piighost://folders/{b64_path}/status")
+    async def folder_status_resource(b64_path: str) -> str:
+        import base64
+        import json
+        # Decode folder path. Add padding back if it was stripped.
+        padding = "=" * (-len(b64_path) % 4)
+        try:
+            folder = base64.urlsafe_b64decode(b64_path + padding).decode("utf-8")
+        except Exception:
+            return json.dumps({"error": "invalid base64url folder path"})
+        project = project_name_for_folder(Path(folder))
+        try:
+            status = await svc.index_status(project=project)
+        except Exception as exc:  # project may not exist yet
+            return json.dumps({
+                "folder": folder,
+                "project": project,
+                "state": "empty",
+                "progress": {"done": 0, "total": 0},
+                "last_update": 0,
+                "errors": [str(exc)],
+            })
+        payload = {
+            "folder": folder,
+            "project": project,
+            "state": "ready" if status.total_docs else "empty",
+            "progress": {"done": status.total_docs, "total": status.total_docs},
+            "last_update": max((f.indexed_at for f in status.files), default=0),
+            "errors": [],
+        }
+        return json.dumps(payload)
+
     @mcp.resource("piighost://projects")
     async def projects_resource() -> str:
         import json
