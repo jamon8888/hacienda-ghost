@@ -1,21 +1,27 @@
-"""Shared fixtures and environment setup for CLI unit tests.
+"""Shared fixtures and environment setup for CLI + service unit tests.
 
-Many tests in this directory render Typer's ``--help`` and assert on the
-presence of specific option names (e.g. ``--project``, ``--filter-prefix``).
-Typer defers rendering to Rich, which wraps against ``COLUMNS`` — the
-default on GitHub-hosted runners is 80, which truncates long option names
-off-screen and turns ``result.output`` into a panel frame with no text.
+Does two things at import time:
 
-Force a wide terminal for the whole CLI-unit-test session so every
-``CliRunner.invoke(..., ['cmd', '--help'])`` assertion works regardless
-of the runner's ambient terminal width. CliRunner inherits ``os.environ``
-(unless ``env=`` is passed explicitly), so setting it at module import
-time is enough.
+1. Force ``COLUMNS=200`` so Typer's Rich-rendered ``--help`` text does
+   not wrap long option names (``--project``, ``--filter-prefix``, …)
+   off-screen on 80-col CI runners.
+
+2. Skip collection of the MCP-server unit tests when the optional
+   ``fastmcp`` extra is not installed. Those test files import
+   ``piighost.mcp.server.build_mcp`` which in turn does
+   ``from fastmcp import FastMCP`` at module top; without the extras,
+   collection itself fails with ``ModuleNotFoundError: fastmcp``.
 """
 from __future__ import annotations
 
 import os
+from importlib.util import find_spec
 
 os.environ.setdefault("COLUMNS", "200")
 # Disable any smart terminal heuristics that might re-detect width.
 os.environ.setdefault("TERM", "dumb")
+
+# Gate MCP tests behind the ``fastmcp`` optional dep so slim CI envs
+# (default ``uv sync --dev``) still collect cleanly.
+if find_spec("fastmcp") is None:
+    collect_ignore_glob = ["test_mcp_*.py"]
