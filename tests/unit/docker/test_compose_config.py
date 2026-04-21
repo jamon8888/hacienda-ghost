@@ -152,3 +152,12 @@ def test_embedder_overlay_adds_sentence_transformers_service() -> None:
     nets = embedder.get("networks", {})
     net_names = list(nets) if isinstance(nets, dict) else nets
     assert "piighost-internal" in net_names
+
+
+def test_llm_overlay_adds_ollama_on_isolated_network() -> None:
+    cfg = _compose_config(
+        "--profile", "workstation",
+        files=["docker-compose.yml", "docker-compose.llm.yml"],
+    )
+    assert "ollama" in cfg["services"]
+    assert "piighost-llm" in cfg["networks"]
