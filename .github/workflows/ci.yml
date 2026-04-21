@@ -48,5 +48,12 @@ jobs:
           key: ${{ runner.os }}-uv-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
             ${{ runner.os }}-uv-${{ matrix.python-version }}-
-      - run: uv sync --locked --dev --group pipeline --group langchain --group faker --no-progress -q
+      # Install the optional extras the test suite actually exercises:
+      #   - index: kreuzberg (document extraction), lancedb, rank-bm25
+      #   - haystack: haystack-ai (integration tests)
+      #   - mcp: fastmcp (MCP server unit tests)
+      # Without these, ~30 tests fail with ModuleNotFoundError /
+      # RuntimeError in `svc.index_path()` rather than exercising real
+      # product behaviour. Local pre-push runs with these installed.
+      - run: uv sync --locked --dev --group pipeline --group langchain --group faker --extra index --extra haystack --extra mcp --no-progress -q
       - run: uv run pytest
