@@ -40,9 +40,35 @@ def ensure_vault_key(*, data_dir: Path) -> str:
         return key_path.read_text(encoding="utf-8").strip()
 
     new_key = secrets.token_urlsafe(48)  # 64-char url-safe
-    key_path.write_text(new_key, encoding="utf-8")
     try:
-        os.chmod(key_path, 0o600)
-    except OSError:  # Windows — ignore permission errors
-        pass
+        # O_EXCL makes file creation atomic+exclusive; mode 0o600 avoids the
+        # umask race between write and chmod. FileExistsError means another
+        # caller beat us to the generate — re-read their key.
+        fd = os.open(
+            key_path, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        return key_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        # Windows doesn't honour the mode arg but does support O_CREAT|O_EXCL.
+        # If the low-level open fails entirely (rare), fall back to the
+        # non-atomic write + best-effort chmod — still better than aborting.
+        key_path.write_text(new_key, encoding="utf-8")
+        try:
+            os.chmod(key_path, 0o600)
+        except OSError:
+            pass
+        return new_key
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(new_key)
+    except Exception:
+        # If writing failed after open, remove the empty file so a retry
+        # doesn't see a key-less 0o600 file and return an empty string.
+        try:
+            key_path.unlink()
+        except OSError:
+            pass
+        raise
     return new_key
