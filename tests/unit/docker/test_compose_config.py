@@ -139,3 +139,16 @@ def test_server_profile_mtls_mode_configurable() -> None:
         env = dict(kv.split("=", 1) for kv in env if "=" in kv)
     # PIIGHOST_AUTH should be configurable (bearer | mtls)
     assert "PIIGHOST_AUTH" in env
+
+
+def test_embedder_overlay_adds_sentence_transformers_service() -> None:
+    cfg = _compose_config(
+        "--profile", "workstation",
+        files=["docker-compose.yml", "docker-compose.embedder.yml"],
+    )
+    assert "piighost-embedder" in cfg["services"]
+    embedder = cfg["services"]["piighost-embedder"]
+    # Must be on internal network — no egress
+    nets = embedder.get("networks", {})
+    net_names = list(nets) if isinstance(nets, dict) else nets
+    assert "piighost-internal" in net_names
