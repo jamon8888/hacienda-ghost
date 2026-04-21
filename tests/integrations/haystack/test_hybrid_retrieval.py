@@ -12,13 +12,15 @@ Gated on ``haystack`` (always imported at module level via ``importorskip``) and
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 pytest.importorskip("haystack")
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.slow]
 
-from haystack import Document, Pipeline  # noqa: E402
+from haystack import AsyncPipeline, Document  # noqa: E402
 from haystack.components.joiners.document_joiner import DocumentJoiner  # noqa: E402
 from haystack.components.retrievers.in_memory import (  # noqa: E402
     InMemoryBM25Retriever,
@@ -140,10 +142,10 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline) -> None:
 
     assert "Alain" not in anonymized_query, "query must be anonymized before retrieval"
 
-    alice_token = next(
-        (tok for tok in anonymized_query.split() if tok.startswith("<PERSON:")),
-        None,
-    )
+    # Use regex to avoid picking up trailing punctuation ("<PERSON:abc123>?"
+    # etc.) from whitespace splits.
+    match = re.search(r"<PERSON:[0-9a-f]+>", anonymized_query)
+    alice_token = match.group(0) if match else None
     assert alice_token is not None, "query should contain an anonymized PERSON token"
     assert any(alice_token in doc.content for doc in anonymized_docs), (
         "HashPlaceholderFactory must produce the same token for document and query paths"
@@ -162,7 +164,10 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline) -> None:
     store.write_documents(embedded_docs)
 
     # --- Build hybrid pipeline: BM25 + embedding, joined via RRF ---
-    retrieval_pipe = Pipeline()
+    # AsyncPipeline + run_async is required because PIIGhostRehydrator
+    # refuses sync .run() from inside a running event loop (the test is
+    # async). See piighost.integrations.haystack._base.
+    retrieval_pipe = AsyncPipeline()
     retrieval_pipe.add_component("bm25", InMemoryBM25Retriever(document_store=store))
     retrieval_pipe.add_component("text_embedder", text_embedder)
     retrieval_pipe.add_component(
@@ -181,7 +186,7 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline) -> None:
     retrieval_pipe.connect("embedding_retriever.documents", "joiner.documents")
     retrieval_pipe.connect("joiner.documents", "rehydrator.documents")
 
-    result = retrieval_pipe.run(
+    result = await retrieval_pipe.run_async(
         {
             "bm25": {"query": anonymized_query, "top_k": 3},
             "text_embedder": {"text": anonymized_query},

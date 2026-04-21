@@ -43,5 +43,6 @@ def test_vault_show_reveal_writes_audit(tmp_path: Path) -> None:
     assert r.exit_code == 0
     row = json.loads(r.stdout.strip())
     assert row["original"] is not None
-    audit_path = tmp_path / ".piighost" / "audit.log"
+    # Per-project audit log (Sprint 2+ multi-project layout).
+    audit_path = tmp_path / ".piighost" / "projects" / "default" / "audit.log"
     assert "vault_show_reveal" in audit_path.read_text(encoding="utf-8")

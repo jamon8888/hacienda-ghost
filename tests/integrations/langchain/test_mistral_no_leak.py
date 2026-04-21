@@ -19,8 +19,12 @@ from piighost.integrations.langchain.transformers import (  # noqa: E402
 )
 
 
-async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
+async def test_no_raw_pii_in_outbound_request_body(pipeline, monkeypatch) -> None:
     from langchain_mistralai import MistralAIEmbeddings
+
+    # monkeypatch so MISTRAL_API_KEY doesn't leak into test_lancedb_roundtrip[mistral]
+    # (which uses `os.getenv("MISTRAL_API_KEY")` to decide whether to skip).
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
 
     captured: list[bytes] = []
 
@@ -46,10 +50,13 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
         )
 
     transport = httpx.MockTransport(handler)
-    client = httpx.Client(transport=transport)
-    async_client = httpx.AsyncClient(transport=transport)
+    # base_url is required: MistralAIEmbeddings issues requests against the
+    # relative path "/embeddings"; without a base_url httpx raises
+    # "unknown url type: '/embeddings'".
+    base_url = "https://api.mistral.ai/v1/"
+    client = httpx.Client(transport=transport, base_url=base_url)
+    async_client = httpx.AsyncClient(transport=transport, base_url=base_url)
 
-    os.environ.setdefault("MISTRAL_API_KEY", "test-key")
     embeddings = MistralAIEmbeddings(
         model="mistral-embed", client=client, async_client=async_client
     )
@@ -67,5 +74,8 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
     assert captured, "mock transport should have captured at least one request"
     for body in captured:
         text = body.decode("utf-8", errors="replace")
+        # The stub detector (see conftest) only flags "Alice" as PERSON. That's
+        # the PII this test verifies never leaves the process; "Paris" stays as
+        # plain text by design (see test_pipeline_wiring for the explicit
+        # coverage of that behaviour).
         assert "Alice" not in text, "raw PII leaked to Mistral embedder"
-        assert "Paris" not in text, "raw PII leaked to Mistral embedder"

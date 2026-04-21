@@ -9,8 +9,6 @@ Marked ``slow`` — skips cleanly when extras are absent.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 pytest.importorskip("haystack")
@@ -28,8 +26,15 @@ from piighost.integrations.haystack import (  # noqa: E402
 )
 
 
-async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
-    """Assert that 'Alice' and 'Paris' never appear in requests to Mistral."""
+async def test_no_raw_pii_in_outbound_request_body(pipeline, monkeypatch) -> None:
+    """Assert that 'Patrick' and 'Paris' never appear in requests to Mistral.
+
+    The haystack conftest's pipeline fixture detects Patrick/Paris/France
+    (see ``ExactMatchDetector`` seeds); we probe with a sentence that
+    contains two of those so the assertion is meaningful.
+    """
+    # Avoid leaking MISTRAL_API_KEY into unrelated tests that skip when it's set.
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     MistralDocumentEmbedder = mistral_mod.MistralDocumentEmbedder
     MistralTextEmbedder = mistral_mod.MistralTextEmbedder
 
@@ -58,11 +63,13 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
 
     transport = httpx.MockTransport(handler)
 
-    os.environ.setdefault("MISTRAL_API_KEY", "test-key")
-
     # Inject the mock transport via http_client_kwargs so all outbound HTTP
-    # requests (both sync and async) go through our handler.
-    http_client_kwargs = {"transport": transport}
+    # requests (both sync and async) go through our handler. A base_url is
+    # required because Mistral issues relative URLs like "/embeddings".
+    http_client_kwargs = {
+        "transport": transport,
+        "base_url": "https://api.mistral.ai/v1/",
+    }
 
     # Check if http_client_kwargs is supported (mistral-haystack >= 1.2)
     import inspect
@@ -74,15 +81,17 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
             "(http_client_kwargs not supported in this version); skipping leak-proof test"
         )
 
-    # Anonymize documents first
+    # Anonymize documents first. We use "Patrick" and "Paris" because the
+    # haystack conftest's ExactMatchDetector flags both (Alice is NOT a
+    # PERSON seed there; the langchain conftest is the Alice-based one).
     anonymizer = PIIGhostDocumentAnonymizer(pipeline=pipeline)
-    raw_docs = [Document(content="Alice visited Paris")]
+    raw_docs = [Document(content="Patrick visited Paris")]
     anon_out = await anonymizer.run_async(documents=raw_docs)
     anonymized_docs = anon_out["documents"]
 
     # Assert no raw PII in the anonymized content before embedding
     for doc in anonymized_docs:
-        assert "Alice" not in doc.content
+        assert "Patrick" not in doc.content
         assert "Paris" not in doc.content
 
     # Embed documents via Mistral with mock transport
@@ -96,9 +105,9 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
 
     # Anonymize query and embed it
     query_anon = PIIGhostQueryAnonymizer(pipeline=pipeline)
-    q_out = await query_anon.run_async(query="Where did Alice go?")
+    q_out = await query_anon.run_async(query="Where did Patrick go?")
     anonymized_query = q_out["query"]
-    assert "Alice" not in anonymized_query
+    assert "Patrick" not in anonymized_query
 
     text_embedder_sig = inspect.signature(MistralTextEmbedder.__init__)
     if "http_client_kwargs" in text_embedder_sig.parameters:
@@ -117,5 +126,5 @@ async def test_no_raw_pii_in_outbound_request_body(pipeline) -> None:
     assert captured, "mock transport should have captured at least one request"
     for body in captured:
         text = body.decode("utf-8", errors="replace")
-        assert "Alice" not in text, "raw PII 'Alice' leaked to Mistral embedder"
+        assert "Patrick" not in text, "raw PII 'Patrick' leaked to Mistral embedder"
         assert "Paris" not in text, "raw PII 'Paris' leaked to Mistral embedder"

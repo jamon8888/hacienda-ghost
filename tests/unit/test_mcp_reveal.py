@@ -16,9 +16,15 @@ def mcp_with_vault(tmp_path, monkeypatch):
     asyncio.run(svc.close())
 
 
+def _tools_by_name(mcp):
+    """Build a name→Tool dict. FastMCP 3.x replaced get_tools() with list_tools()."""
+    tools = asyncio.run(mcp.list_tools())
+    return {t.name: t for t in tools}
+
+
 def test_vault_list_reveal_false_masks_original(mcp_with_vault):
     mcp, _ = mcp_with_vault
-    tools = asyncio.run(mcp.get_tools())
+    tools = _tools_by_name(mcp)
     vault_list_tool = tools["vault_list"]
     result = asyncio.run(vault_list_tool.run({"reveal": False}))
     entries = result.structured_content["result"]
@@ -31,7 +37,7 @@ def test_vault_list_reveal_false_masks_original(mcp_with_vault):
 
 def test_vault_list_reveal_true_surfaces_original(mcp_with_vault):
     mcp, _ = mcp_with_vault
-    tools = asyncio.run(mcp.get_tools())
+    tools = _tools_by_name(mcp)
     vault_list_tool = tools["vault_list"]
     result = asyncio.run(vault_list_tool.run({"reveal": True}))
     entries = result.structured_content["result"]

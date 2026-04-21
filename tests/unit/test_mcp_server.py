@@ -42,9 +42,9 @@ def test_mcp_has_expected_tools(tmp_path, monkeypatch):
 
     from piighost.mcp.server import build_mcp
     mcp, svc = asyncio.run(build_mcp(tmp_path / "vault"))
-    # get_tools() is async and returns dict[name, Tool]
-    tools = asyncio.run(mcp.get_tools())
-    tool_names = set(tools.keys())
+    # FastMCP 3.x: list_tools() returns list[Tool]; get_tools() was removed.
+    tool_list = asyncio.run(mcp.list_tools())
+    tool_names = {t.name for t in tool_list}
     expected = {
         "anonymize_text", "rehydrate_text", "index_path",
         "query", "vault_search", "vault_list", "vault_get",

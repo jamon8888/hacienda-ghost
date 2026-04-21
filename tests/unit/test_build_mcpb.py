@@ -1,4 +1,6 @@
+import hashlib
 import json
+import os
 import zipfile
 from pathlib import Path
 import sys
@@ -79,3 +81,41 @@ def test_build_both_variants(tmp_path, monkeypatch):
     assert core_out.exists()
     assert full_out.exists()
     assert core_out != full_out
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _assert_deterministic(variant: str, tmp_path: Path, monkeypatch) -> None:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import build_mcpb
+
+    version = _root_version()
+    icon = ROOT / "bundles" / variant / "icon.png"
+
+    dist_a = tmp_path / "a"
+    dist_b = tmp_path / "b"
+    dist_a.mkdir()
+    dist_b.mkdir()
+
+    monkeypatch.setattr(build_mcpb, "DIST", dist_a)
+    out_a = build_mcpb.build(variant, version)
+    hash_a = _sha256(out_a)
+
+    st = icon.stat()
+    os.utime(icon, (st.st_atime + 5, st.st_mtime + 5))
+
+    monkeypatch.setattr(build_mcpb, "DIST", dist_b)
+    out_b = build_mcpb.build(variant, version)
+    hash_b = _sha256(out_b)
+
+    assert hash_a == hash_b, f"{variant} build is not deterministic: {hash_a} != {hash_b}"
+
+
+def test_build_core_is_deterministic(tmp_path, monkeypatch):
+    _assert_deterministic("core", tmp_path, monkeypatch)
+
+
+def test_build_full_is_deterministic(tmp_path, monkeypatch):
+    _assert_deterministic("full", tmp_path, monkeypatch)

@@ -27,7 +27,7 @@ def built_mcp(tmp_path, monkeypatch):
 
 def test_indexing_tools_registered_when_available(built_mcp):
     mcp, _ = built_mcp
-    tools = asyncio.run(mcp.get_tools())
+    tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
     assert "index_path" in tools
     assert "query" in tools
 
@@ -50,7 +50,7 @@ def test_indexing_tools_not_registered_when_unavailable(tmp_path, monkeypatch):
     vault_dir = tmp_path / "vault"
     mcp, svc = asyncio.run(build_mcp(vault_dir))
     try:
-        tools = asyncio.run(mcp.get_tools())
+        tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
         assert "index_path" not in tools
         assert "query" not in tools
         assert "anonymize_text" in tools

@@ -45,6 +45,17 @@ def _render_pyproject(variant: str, version: str) -> str:
     )
 
 
+_ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+_FILE_ATTR = 0o644 << 16
+
+
+def _zinfo(arcname: str) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(filename=arcname, date_time=_ZIP_EPOCH)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = _FILE_ATTR
+    return info
+
+
 def build(variant: str, version: str) -> Path:
     src = BUNDLES / variant
     out = DIST / f"piighost-{variant}.mcpb"
@@ -61,9 +72,10 @@ def build(variant: str, version: str) -> Path:
                 continue
             arcname = str(path.relative_to(src)).replace("\\", "/")
             if arcname in rendered:
-                zf.writestr(arcname, rendered[arcname])
+                data = rendered[arcname].encode("utf-8")
             else:
-                zf.write(path, arcname)
+                data = path.read_bytes()
+            zf.writestr(_zinfo(arcname), data)
     return out
 
 

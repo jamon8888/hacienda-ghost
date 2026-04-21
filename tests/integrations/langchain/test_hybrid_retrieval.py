@@ -6,6 +6,8 @@ on anonymized tokens underperforms because <PERSON:hash> is opaque; BM25 on
 the same token is exact. EnsembleRetriever combines the two.
 """
 
+import re
+
 import pytest
 
 pytest.importorskip("langchain_core")
@@ -14,13 +16,19 @@ pytest.importorskip("rank_bm25")
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.slow]
 
+# EnsembleRetriever moved to langchain_classic in langchain>=1.0. Try the new
+# home first and fall back to langchain_community for older installs.
 try:
-    from langchain_community.retrievers import EnsembleRetriever  # noqa: E402
-except ImportError:  # pragma: no cover - EnsembleRetriever moved in langchain>=1.0
-    pytest.skip(
-        "EnsembleRetriever unavailable in this langchain_community version",
-        allow_module_level=True,
-    )
+    from langchain_classic.retrievers import EnsembleRetriever  # noqa: E402
+except ImportError:  # pragma: no cover - older langchain layouts
+    try:
+        from langchain_community.retrievers import EnsembleRetriever  # noqa: E402
+    except ImportError:
+        pytest.skip(
+            "EnsembleRetriever unavailable: install langchain_classic or a "
+            "langchain_community<1.0 release.",
+            allow_module_level=True,
+        )
 from langchain_community.retrievers import BM25Retriever  # noqa: E402
 from langchain_core.documents import Document  # noqa: E402
 
@@ -122,11 +130,10 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline, tmp_path) ->
 
     # Confirm token identity: the BM25 leg only works if the same
     # HashPlaceholderFactory produces byte-identical tokens for the
-    # document path and the query path.
-    anon_token = next(
-        (tok for tok in qresult["query"].split() if tok.startswith("<PERSON:")),
-        None,
-    )
+    # document path and the query path. Use regex to avoid picking up
+    # trailing punctuation ("<PERSON:abc123>?" etc.) from whitespace splits.
+    match = re.search(r"<PERSON:[0-9a-f]+>", qresult["query"])
+    anon_token = match.group(0) if match else None
     assert anon_token is not None, "query should contain an anonymized PERSON token"
     assert any(anon_token in d.page_content for d in anonymized), (
         "HashPlaceholderFactory must produce the same token for document and query paths"

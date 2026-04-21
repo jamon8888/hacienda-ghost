@@ -29,7 +29,7 @@ def test_query_tool_accepts_filter_prefix(built_mcp, tmp_path):
     doc.write_text("Alice works here")
     asyncio.run(svc.index_path(doc, project="p"))
 
-    tools = asyncio.run(mcp.get_tools())
+    tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
     result = asyncio.run(
         tools["query"].run(
             {"text": "Alice", "project": "p", "k": 3, "filter_prefix": str(tmp_path)}
@@ -48,7 +48,7 @@ def test_query_tool_accepts_rerank_param(built_mcp, tmp_path):
     doc.write_text("Alice here")
     asyncio.run(svc.index_path(doc, project="p"))
 
-    tools = asyncio.run(mcp.get_tools())
+    tools = {t.name: t for t in asyncio.run(mcp.list_tools())}
     result = asyncio.run(
         tools["query"].run({"text": "Alice", "project": "p", "k": 3, "rerank": False})
     )
