@@ -28,10 +28,6 @@ from piighost.mcp.server import build_mcp
 
 @pytest.mark.asyncio
 async def test_full_hacienda_flow(tmp_path: Path, monkeypatch) -> None:
-    # Use stub backends so the test runs hermetically (no GPU / network needed).
-    monkeypatch.setenv("PIIGHOST_EMBEDDER", "stub")
-    monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
-
     # Set up a fake Cowork folder with a single text document.
     folder = tmp_path / "clients" / "ACME"
     folder.mkdir(parents=True)
@@ -40,6 +36,10 @@ async def test_full_hacienda_flow(tmp_path: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
 
+    # All service env vars are set together, immediately before build_mcp, so
+    # the "environment fully configured → service created" invariant is obvious.
+    monkeypatch.setenv("PIIGHOST_EMBEDDER", "stub")  # hermetic: no GPU / network
+    monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
     monkeypatch.setenv("HACIENDA_DATA_DIR", str(tmp_path / "hdata"))
     monkeypatch.setenv("CLOAKPIPE_VAULT_KEY", "x" * 48)
 
@@ -95,6 +95,10 @@ async def test_full_hacienda_flow(tmp_path: Path, monkeypatch) -> None:
         if isinstance(q, dict) and "result" in q and len(q) == 1:
             q = q["result"]
         excerpts = q.get("hits") or q.get("results") or q.get("excerpts") or []
+        # Note: the stub detector does not redact "Jean Martin", so this only
+        # checks that a chunk was indexed and retrieved — not that PII was
+        # redacted in the excerpt.  The PII safety invariant below (on the
+        # audit payload) is the real safety gate.
         assert excerpts, "expected at least one hit for the indexed note"
 
         # 6. audit round-trip
