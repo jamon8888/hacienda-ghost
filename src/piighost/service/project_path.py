@@ -31,8 +31,12 @@ def derive_project_from_path(path: Path) -> str:
     Walks from the path's parent toward the root, skipping generic names
     (``documents``, ``src``, ``projects``, ...) and names with invalid
     characters. Returns ``"default"`` if no suitable candidate is found.
+
+    Uses ``absolute()`` rather than ``resolve()`` so symlinks are not
+    followed — otherwise on macOS ``/tmp`` resolves to ``/private/tmp``
+    and the derivation would pick up ``"private"`` as a project name.
     """
-    resolved = path.resolve()
+    resolved = path.absolute()
     parts = [p for p in resolved.parts if p not in ("/", "\\")]
     parts = [p for p in parts if not (len(p) == 2 and p.endswith(":"))]
     for candidate in reversed(parts[:-1]):
