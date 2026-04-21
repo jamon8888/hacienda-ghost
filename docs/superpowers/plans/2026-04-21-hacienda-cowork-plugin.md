@@ -12,11 +12,13 @@
 
 **Target repo layout:** `C:\Users\NMarchitecte\Documents\hacienda\` (new, separate repo).
 
-**Cowork contract notes (must follow):**
+**Cowork contract notes (verified against the Claude Code plugins reference):**
 - **Skills are passive markdown.** `skills/<name>/SKILL.md` frontmatter accepts only `name` and `description`. No `allowed-tools`, no Python, no executables. Skills describe procedure; tool availability comes from `.mcp.json` at the session level and from commands/agents.
-- **Commands can invoke tools** via `allowed-tools`.
-- **Agents can invoke tools** via `tools`.
-- **Executable code lives in** `hooks/`, `bin/`, `scripts/` — never in `skills/`.
+- **Commands can invoke tools** via `allowed-tools` in their frontmatter.
+- **Agents inherit session tools.** Agent frontmatter schema: required `name`, `description`, `model`; optional `effort`, `maxTurns`, `disallowedTools`, `isolation`. There is **no `tools:` allowlist** — use `disallowedTools` to subtract dangerous tools.
+- **Hook paths** use `${CLAUDE_PLUGIN_ROOT}` (the documented env var). Not `CLAUDE_PLUGIN_DIR`.
+- **Executable code lives in** `hooks/` and `scripts/` — never in `skills/`. Convention per docs: `${CLAUDE_PLUGIN_ROOT}/scripts/<name>.<ext>`.
+- **Valid hook types:** `command`, `http`, `prompt`, `agent`. This plan uses only `command`.
 
 ---
 
@@ -56,17 +58,16 @@ hacienda/
 │       └── audit_log.py
 ├── monitors/
 │   └── monitors.json
-├── bin/
+├── scripts/
 │   ├── hacienda-bootstrap
 │   ├── hacienda-bootstrap.cmd
+│   ├── vendor-piighost.sh
+│   ├── package-mcpb.sh
 │   └── _hacienda_bootstrap/
 │       ├── __init__.py
 │       ├── datadir.py
 │       ├── keychain.py
 │       └── daemon.py
-├── scripts/
-│   ├── vendor-piighost.sh
-│   └── package-mcpb.sh
 ├── tests/
 │   ├── conftest.py
 │   ├── test_project_resolver.py
@@ -188,7 +189,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hooks", "bin"]
+pythonpath = ["hooks", "scripts"]
 
 [tool.ruff]
 line-length = 100
@@ -366,7 +367,7 @@ def test_mcp_json_exposes_hacienda_server():
 
 def test_mcp_json_uses_plugin_dir_variable():
     raw = MCP_JSON.read_text(encoding="utf-8")
-    assert "${CLAUDE_PLUGIN_DIR}" in raw, "server path must be relocatable via CLAUDE_PLUGIN_DIR"
+    assert "${CLAUDE_PLUGIN_ROOT}" in raw, "server path must be relocatable via CLAUDE_PLUGIN_ROOT"
 ```
 
 - [ ] **Step 2: Run test — expect FAIL**
@@ -430,7 +431,7 @@ Expected output: `Vendored piighost 0.X.Y into vendor/piighost`. `ls vendor/piig
       "args": [
         "run",
         "--project",
-        "${CLAUDE_PLUGIN_DIR}/vendor/piighost",
+        "${CLAUDE_PLUGIN_ROOT}/vendor/piighost",
         "piighost",
         "mcp",
         "serve"
@@ -707,9 +708,9 @@ class AnonymizeResult:
 class PiighostCLI:
     def __init__(self, vendor_dir: Path | None = None):
         if vendor_dir is None:
-            plugin_dir = os.environ.get("CLAUDE_PLUGIN_DIR")
+            plugin_dir = os.environ.get("CLAUDE_PLUGIN_ROOT")
             if not plugin_dir:
-                raise RuntimeError("CLAUDE_PLUGIN_DIR not set")
+                raise RuntimeError("CLAUDE_PLUGIN_ROOT not set")
             vendor_dir = Path(plugin_dir) / "vendor" / "piighost"
         self.vendor_dir = Path(vendor_dir)
 
@@ -898,7 +899,7 @@ def env(tmp_path, monkeypatch):
     return {
         "HACIENDA_ACTIVE_FOLDER": str(tmp_path / "Dossiers" / "ACME"),
         "HACIENDA_DATA_DIR": str(tmp_path / ".hacienda"),
-        "CLAUDE_PLUGIN_DIR": str(Path(__file__).parent.parent),
+        "CLAUDE_PLUGIN_ROOT": str(Path(__file__).parent.parent),
         "PATH": "/usr/bin:/bin",
     }
 
@@ -1143,7 +1144,7 @@ def env(tmp_path):
     return {
         "HACIENDA_ACTIVE_FOLDER": str(tmp_path / "Dossiers" / "ACME"),
         "HACIENDA_DATA_DIR": str(tmp_path / ".hacienda"),
-        "CLAUDE_PLUGIN_DIR": str(Path(__file__).parent.parent),
+        "CLAUDE_PLUGIN_ROOT": str(Path(__file__).parent.parent),
         "PATH": "/usr/bin:/bin",
     }
 
@@ -1344,8 +1345,8 @@ def test_posttooluse_covers_retrieval_tools():
 
 def test_commands_reference_plugin_dir_variable():
     raw = HOOKS.read_text(encoding="utf-8")
-    assert "${CLAUDE_PLUGIN_DIR}/hooks/redact.py" in raw
-    assert "${CLAUDE_PLUGIN_DIR}/hooks/rehydrate.py" in raw
+    assert "${CLAUDE_PLUGIN_ROOT}/hooks/redact.py" in raw
+    assert "${CLAUDE_PLUGIN_ROOT}/hooks/rehydrate.py" in raw
 ```
 
 - [ ] **Step 2: Run test — expect FAIL**
@@ -1366,7 +1367,7 @@ Expected: `FileNotFoundError`.
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_DIR}/hooks/redact.py"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/redact.py"
           }
         ]
       }
@@ -1377,7 +1378,7 @@ Expected: `FileNotFoundError`.
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ${CLAUDE_PLUGIN_DIR}/hooks/rehydrate.py"
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/rehydrate.py"
           }
         ]
       }
@@ -1897,14 +1898,10 @@ git commit -m "feat(commands): stretch — brief, draft-reply"
 
 ```markdown
 ---
+name: redaction-agent
 description: Specialist subagent for auditing large redaction jobs or investigating suspected leaks. Invoke when the user reports a suspected PII leak, when an outbound payload was blocked at the 5MB cap, or when the user wants an end-to-end walk-through of what left the laptop in a session.
-tools:
-  - Read
-  - Glob
-  - Grep
-  - mcp__hacienda__vault_search
-  - mcp__hacienda__vault_get
-  - mcp__hacienda__vault_stats
+model: sonnet
+disallowedTools: Write, Edit, MultiEdit, WebFetch, WebSearch
 ---
 
 You are the hacienda redaction auditor. Your job is to answer three
@@ -1934,12 +1931,26 @@ dump (question 2). Default to placeholders.
 Append to `tests/test_skill_frontmatter.py`:
 ```python
 def test_agent_frontmatter_valid():
+    """Agent schema (per Claude Code plugins reference):
+    required: name, description, model
+    optional: effort, maxTurns, disallowedTools, isolation
+    There is NO `tools:` allowlist — agents inherit session tools;
+    use `disallowedTools` to subtract.
+    """
     path = ROOT / "agents" / "redaction-agent.md"
     fm = _parse_frontmatter(path)
-    assert "description" in fm
-    assert len(fm["description"]) >= 40
-    assert "tools" in fm
-    assert "mcp__hacienda__vault_get" in fm["tools"]
+    assert fm.get("name") == "redaction-agent"
+    assert "description" in fm and len(fm["description"]) >= 40
+    assert "model" in fm
+    assert "tools" not in fm, "agents use disallowedTools (subtractive), not tools (allowlist)"
+    # Fail-closed: outbound write/fetch tools must be denied so the auditor
+    # cannot leak vault contents by accident.
+    assert "disallowedTools" in fm
+    denied = fm["disallowedTools"] if isinstance(fm["disallowedTools"], list) else [
+        t.strip() for t in fm["disallowedTools"].split(",")
+    ]
+    for required in ("Write", "Edit", "WebFetch", "WebSearch"):
+        assert required in denied, f"redaction-agent must disallow {required}"
 ```
 
 - [ ] **Step 3: Run test — expect PASS**
@@ -1960,8 +1971,8 @@ git commit -m "feat(agents): redaction-agent subagent for audits"
 ## Task 14: Bootstrap — data directory
 
 **Files:**
-- Create: `bin/_hacienda_bootstrap/__init__.py`
-- Create: `bin/_hacienda_bootstrap/datadir.py`
+- Create: `scripts/_hacienda_bootstrap/__init__.py`
+- Create: `scripts/_hacienda_bootstrap/datadir.py`
 - Create: `tests/test_bootstrap_datadir.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -2005,13 +2016,13 @@ def test_ensure_data_dir_is_idempotent(tmp_path):
 uv run --with ".[dev]" pytest tests/test_bootstrap_datadir.py -v
 ```
 
-- [ ] **Step 3: Write `bin/_hacienda_bootstrap/__init__.py`**
+- [ ] **Step 3: Write `scripts/_hacienda_bootstrap/__init__.py`**
 
 ```python
 """First-run bootstrap helpers for the hacienda plugin."""
 ```
 
-- [ ] **Step 4: Write `bin/_hacienda_bootstrap/datadir.py`**
+- [ ] **Step 4: Write `scripts/_hacienda_bootstrap/datadir.py`**
 
 ```python
 """Create the ~/.hacienda layout on first run."""
@@ -2040,7 +2051,7 @@ Edit `pyproject.toml` section `[tool.pytest.ini_options]`:
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hooks", "bin"]
+pythonpath = ["hooks", "scripts"]
 ```
 (Already present from Task 0 — verify.)
 
@@ -2053,7 +2064,7 @@ uv run --with ".[dev]" pytest tests/test_bootstrap_datadir.py -v
 - [ ] **Step 7: Commit**
 
 ```bash
-git add bin/_hacienda_bootstrap/__init__.py bin/_hacienda_bootstrap/datadir.py tests/test_bootstrap_datadir.py
+git add scripts/_hacienda_bootstrap/__init__.py scripts/_hacienda_bootstrap/datadir.py tests/test_bootstrap_datadir.py
 git commit -m "feat(bootstrap): ensure_data_dir idempotent + chmod 0700"
 ```
 
@@ -2062,7 +2073,7 @@ git commit -m "feat(bootstrap): ensure_data_dir idempotent + chmod 0700"
 ## Task 15: Bootstrap — OS keychain vault key
 
 **Files:**
-- Create: `bin/_hacienda_bootstrap/keychain.py`
+- Create: `scripts/_hacienda_bootstrap/keychain.py`
 - Create: `tests/test_bootstrap_keychain.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -2113,7 +2124,7 @@ def test_ensure_vault_key_uses_secrets_not_random():
 uv run --with ".[dev]" pytest tests/test_bootstrap_keychain.py -v
 ```
 
-- [ ] **Step 3: Write `bin/_hacienda_bootstrap/keychain.py`**
+- [ ] **Step 3: Write `scripts/_hacienda_bootstrap/keychain.py`**
 
 ```python
 """OS-keychain-backed vault key management.
@@ -2180,7 +2191,7 @@ uv run --with ".[dev]" pytest tests/test_bootstrap_keychain.py -v
 - [ ] **Step 6: Commit**
 
 ```bash
-git add bin/_hacienda_bootstrap/keychain.py tests/test_bootstrap_keychain.py pyproject.toml
+git add scripts/_hacienda_bootstrap/keychain.py tests/test_bootstrap_keychain.py pyproject.toml
 git commit -m "feat(bootstrap): vault key in OS keychain (pluggable backend)"
 ```
 
@@ -2189,11 +2200,11 @@ git commit -m "feat(bootstrap): vault key in OS keychain (pluggable backend)"
 ## Task 16: Bootstrap — daemon spawn + CLI entrypoint
 
 **Files:**
-- Create: `bin/_hacienda_bootstrap/daemon.py`
-- Create: `bin/hacienda-bootstrap`
-- Create: `bin/hacienda-bootstrap.cmd`
+- Create: `scripts/_hacienda_bootstrap/daemon.py`
+- Create: `scripts/hacienda-bootstrap`
+- Create: `scripts/hacienda-bootstrap.cmd`
 
-- [ ] **Step 1: Write `bin/_hacienda_bootstrap/daemon.py`**
+- [ ] **Step 1: Write `scripts/_hacienda_bootstrap/daemon.py`**
 
 ```python
 """Spawn (or no-op attach to) the vendored piighost daemon."""
@@ -2230,7 +2241,7 @@ def start_daemon(vendor_dir: Path, data_dir: Path) -> None:
     )
 ```
 
-- [ ] **Step 2: Write `bin/hacienda-bootstrap` (POSIX shebang entry)**
+- [ ] **Step 2: Write `scripts/hacienda-bootstrap` (POSIX shebang entry)**
 
 ```python
 #!/usr/bin/env python3
@@ -2249,7 +2260,7 @@ from _hacienda_bootstrap.keychain import default_backend, ensure_vault_key
 
 
 def main() -> int:
-    plugin_dir = Path(os.environ.get("CLAUDE_PLUGIN_DIR", Path(__file__).parent.parent))
+    plugin_dir = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", Path(__file__).parent.parent))
     data_dir = Path(os.environ.get("HACIENDA_DATA_DIR", Path.home() / ".hacienda"))
     vendor_dir = plugin_dir / "vendor" / "piighost"
 
@@ -2267,10 +2278,10 @@ if __name__ == "__main__":
 
 Make it executable:
 ```bash
-chmod +x bin/hacienda-bootstrap
+chmod +x scripts/hacienda-bootstrap
 ```
 
-- [ ] **Step 3: Write `bin/hacienda-bootstrap.cmd` (Windows wrapper)**
+- [ ] **Step 3: Write `scripts/hacienda-bootstrap.cmd` (Windows wrapper)**
 
 ```batch
 @echo off
@@ -2280,7 +2291,7 @@ python "%~dp0hacienda-bootstrap" %*
 - [ ] **Step 4: Smoke-test the entrypoint**
 
 ```bash
-HACIENDA_DATA_DIR=/tmp/hacienda-smoke CLAUDE_PLUGIN_DIR="$PWD" python3 bin/hacienda-bootstrap
+HACIENDA_DATA_DIR=/tmp/hacienda-smoke CLAUDE_PLUGIN_ROOT="$PWD" python3 scripts/hacienda-bootstrap
 ```
 Expected stderr: `hacienda: ready at /tmp/hacienda-smoke`.
 Then `ls /tmp/hacienda-smoke/` shows `sessions/ projects/ logs/`.
@@ -2293,7 +2304,7 @@ rm -rf /tmp/hacienda-smoke
 - [ ] **Step 5: Commit**
 
 ```bash
-git add bin/_hacienda_bootstrap/daemon.py bin/hacienda-bootstrap bin/hacienda-bootstrap.cmd
+git add scripts/_hacienda_bootstrap/daemon.py scripts/hacienda-bootstrap scripts/hacienda-bootstrap.cmd
 git commit -m "feat(bootstrap): CLI entrypoint — datadir + keychain + daemon"
 ```
 
@@ -2316,7 +2327,7 @@ git commit -m "feat(bootstrap): CLI entrypoint — datadir + keychain + daemon"
       "args": [
         "run",
         "--project",
-        "${CLAUDE_PLUGIN_DIR}/vendor/piighost",
+        "${CLAUDE_PLUGIN_ROOT}/vendor/piighost",
         "piighost",
         "watcher",
         "tail",
@@ -2372,7 +2383,7 @@ def test_monitors_schema_valid():
 
 def test_monitor_uses_plugin_dir_variable():
     raw = MONITORS.read_text(encoding="utf-8")
-    assert "${CLAUDE_PLUGIN_DIR}" in raw
+    assert "${CLAUDE_PLUGIN_ROOT}" in raw
 ```
 
 - [ ] **Step 3: Run test — expect PASS**
@@ -2997,7 +3008,7 @@ No gaps. Every spec requirement maps to at least one task.
 - `AuditLog.record(event, tool, project, placeholders)` consistent between Task 5 and Task 6.
 - `resolve_project_name(folder: Path) -> str` consistent across Tasks 3, 6, 7.
 - `ensure_vault_key(backend, *, service, account) -> str` consistent across Tasks 15, 16.
-- Env vars consistent: `CLAUDE_PLUGIN_DIR`, `HACIENDA_ACTIVE_FOLDER`, `HACIENDA_DATA_DIR` used identically everywhere.
+- Env vars consistent: `CLAUDE_PLUGIN_ROOT`, `HACIENDA_ACTIVE_FOLDER`, `HACIENDA_DATA_DIR` used identically everywhere.
 - MCP tool names: `mcp__hacienda__hybrid_search`, `mcp__hacienda__index_path`, `mcp__hacienda__vault_get` — same spellings in hooks.json matcher, SKILL.md prose guidance, and command `allowed-tools`.
 - Cowork skill contract respected: SKILL.md frontmatter carries only `name` and `description`; tool invocation happens through `.mcp.json` session-level tools (used by commands with `allowed-tools` and by the redaction-agent with `tools`).
 - `hacienda://kb/status` resource URI used consistently.
