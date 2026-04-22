@@ -92,6 +92,7 @@ dev = [
     "zensical>=0.0.27",
     "commitizen>=4.13.9",
     "pytest-asyncio>=0.25",
+    "pytest-benchmark>=5.1",
 ]
 faker = [
     "faker>=40.11.0",
