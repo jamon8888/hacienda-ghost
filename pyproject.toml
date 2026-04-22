@@ -118,6 +118,9 @@ llm = [
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/piighost"
+markers = [
+    "slow: marks tests that take more than a few seconds",
+]
 
 [tool.coverage.report]
 show_missing = true
