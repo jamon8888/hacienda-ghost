@@ -86,8 +86,15 @@ def _indexing_available() -> bool:
     return importlib.util.find_spec("sentence_transformers") is not None
 
 
+def _load_config(vault_dir: Path) -> ServiceConfig:
+    cfg_path = vault_dir / "config.toml"
+    if cfg_path.exists():
+        return ServiceConfig.from_toml(cfg_path)
+    return ServiceConfig()
+
+
 async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
-    config = ServiceConfig()
+    config = _load_config(vault_dir)
     svc = await PIIGhostService.create(vault_dir=vault_dir, config=config)
     mcp = FastMCP("piighost", "GDPR-compliant PII anonymization and document retrieval")
 
@@ -258,10 +265,7 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
         )
 
     # ------------------------------------------------------------------
-    # Cowork plugin surface — folder-centric tools consumed by the
-    # `hacienda` plugin skills (resolve / bootstrap / session audit /
-    # folder status resource). Kept here (not in a separate module)
-    # because they only make sense when exposed over MCP.
+    # Cowork plugin surface
     # ------------------------------------------------------------------
 
     def _slug_for_folder(folder: Path) -> str:
@@ -358,12 +362,6 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
 
     @mcp.resource("piighost://folders/{b64_path}/status")
     async def folder_status_resource(b64_path: str) -> str:
-        """Status for a Cowork folder — base64url-encoded absolute path.
-
-        Returns JSON: {folder, project, state, total_docs, total_chunks,
-        last_update, errors}. `state` is 'ready' when any docs are indexed,
-        'empty' otherwise.
-        """
         import base64
         import json
 
