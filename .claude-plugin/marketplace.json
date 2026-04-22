@@ -1,0 +1,13 @@
+{
+  "name": "hacienda-local",
+  "owner": {
+    "name": "piighost team"
+  },
+  "plugins": [
+    {
+      "name": "hacienda",
+      "source": "./plugin",
+      "description": "PII-safe RAG for Cowork — local dev checkout"
+    }
+  ]
+}

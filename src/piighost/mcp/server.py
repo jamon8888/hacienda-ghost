@@ -257,6 +257,151 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
             f"Total chunks: {status.total_chunks}\n"
         )
 
+    # ------------------------------------------------------------------
+    # Cowork plugin surface — folder-centric tools consumed by the
+    # `hacienda` plugin skills (resolve / bootstrap / session audit /
+    # folder status resource). Kept here (not in a separate module)
+    # because they only make sense when exposed over MCP.
+    # ------------------------------------------------------------------
+
+    def _slug_for_folder(folder: Path) -> str:
+        import hashlib
+        import re
+        abs_path = folder.resolve()
+        raw_name = abs_path.name or "folder"
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", raw_name).strip("-").lower()[:40] or "folder"
+        digest = hashlib.sha256(str(abs_path).encode("utf-8")).hexdigest()[:8]
+        return f"{slug}-{digest}"
+
+    def _sessions_dir() -> Path:
+        path = vault_dir / "sessions"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @mcp.tool(
+        description=(
+            "Resolve a deterministic project name from an absolute folder path. "
+            "Returns {folder, project} where project is '<slug>-<hash8>'."
+        )
+    )
+    async def resolve_project_for_folder(folder: str) -> dict:
+        path = Path(folder).expanduser().resolve()
+        return {"folder": str(path), "project": _slug_for_folder(path)}
+
+    @mcp.tool(
+        description=(
+            "Idempotently provision the vault + project for a Cowork folder. "
+            "Returns {folder, project, vault_key_provisioned}."
+        )
+    )
+    async def bootstrap_client_folder(folder: str) -> dict:
+        path = Path(folder).expanduser().resolve()
+        project = _slug_for_folder(path)
+        existing = {p.name for p in await svc.list_projects()}
+        if project not in existing:
+            await svc.create_project(
+                project,
+                description=f"Cowork folder: {path}",
+            )
+        return {
+            "folder": str(path),
+            "project": project,
+            "vault_key_provisioned": True,
+        }
+
+    @mcp.tool(
+        description=(
+            "Append an audit entry to ~/.hacienda/sessions/<session_id>.audit.jsonl "
+            "(session_id should be the project slug). Returns {path, line_count}."
+        )
+    )
+    async def session_audit_append(
+        session_id: str, event: str, payload: dict | None = None
+    ) -> dict:
+        import datetime as _dt
+        import json
+
+        log_file = _sessions_dir() / f"{session_id}.audit.jsonl"
+        entry = {
+            "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "event": event,
+            "payload": payload or {},
+        }
+        with log_file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        line_count = sum(1 for _ in log_file.open("r", encoding="utf-8"))
+        return {"path": str(log_file), "line_count": line_count}
+
+    @mcp.tool(
+        description=(
+            "Read all audit entries for a session (project slug). "
+            "Returns {session_id, entries, count}."
+        )
+    )
+    async def session_audit_read(session_id: str) -> dict:
+        import json
+
+        log_file = _sessions_dir() / f"{session_id}.audit.jsonl"
+        if not log_file.exists():
+            return {"session_id": session_id, "entries": [], "count": 0}
+        entries: list[dict] = []
+        with log_file.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return {"session_id": session_id, "entries": entries, "count": len(entries)}
+
+    @mcp.resource("piighost://folders/{b64_path}/status")
+    async def folder_status_resource(b64_path: str) -> str:
+        """Status for a Cowork folder — base64url-encoded absolute path.
+
+        Returns JSON: {folder, project, state, total_docs, total_chunks,
+        last_update, errors}. `state` is 'ready' when any docs are indexed,
+        'empty' otherwise.
+        """
+        import base64
+        import json
+
+        padding = "=" * (-len(b64_path) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode(b64_path + padding).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return json.dumps({"error": "invalid base64url-encoded path"})
+
+        folder = Path(decoded).expanduser().resolve()
+        project = _slug_for_folder(folder)
+        try:
+            status = await svc.index_status(project=project)
+        except Exception:
+            return json.dumps(
+                {
+                    "folder": str(folder),
+                    "project": project,
+                    "state": "empty",
+                    "total_docs": 0,
+                    "total_chunks": 0,
+                    "last_update": None,
+                    "errors": [],
+                }
+            )
+        state = "ready" if status.total_docs > 0 else "empty"
+        return json.dumps(
+            {
+                "folder": str(folder),
+                "project": project,
+                "state": state,
+                "total_docs": status.total_docs,
+                "total_chunks": status.total_chunks,
+                "last_update": getattr(status, "last_update", None),
+                "errors": list(getattr(status, "errors", []) or []),
+            }
+        )
+
     return mcp, svc
 
 
