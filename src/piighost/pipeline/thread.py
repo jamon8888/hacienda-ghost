@@ -13,6 +13,7 @@ by message hash and deduplicated by ``(text.lower(), label)``.  The
 pipeline to recreate consistent placeholder tokens across messages.
 """
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -159,6 +160,7 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         entity_linker: AnyEntityLinker | None = None,
         entity_resolver: AnyEntityConflictResolver | None = None,
         span_resolver: AnySpanConflictResolver | None = None,
+        max_threads: int = 100,
     ) -> None:
         factory = anonymizer.ph_factory
         if isinstance(factory, (RedactPlaceholderFactory, MaskPlaceholderFactory)):
@@ -177,13 +179,20 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
             anonymizer=anonymizer,
         )
 
-        self._memories: dict[str, ConversationMemory] = {}
+        self._memories: OrderedDict[str, ConversationMemory] = OrderedDict()
+        self._max_threads = max_threads
         self._thread_id: str = "default"
 
     def get_memory(self, thread_id: str = "default") -> ConversationMemory:
-        """Return the memory for *thread_id* (created on first access)."""
-        if thread_id not in self._memories:
-            self._memories[thread_id] = ConversationMemory()
+        """Return the memory for *thread_id*, evicting LRU thread if over limit."""
+        if thread_id in self._memories:
+            self._memories.move_to_end(thread_id)
+            return self._memories[thread_id]
+
+        if len(self._memories) >= self._max_threads:
+            self._memories.popitem(last=False)  # evict least-recently-used
+
+        self._memories[thread_id] = ConversationMemory()
         return self._memories[thread_id]
 
     def get_resolved_entities(self, thread_id: str = "default") -> list[Entity]:
@@ -333,6 +342,51 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         # Required for deanonymize method which looks up mappings via cache.
         await self._store_mapping(text, result, entities)
         return result, entities
+
+    async def anonymize_batch(
+        self,
+        texts: list[str],
+        thread_id: str = "default",
+    ) -> list[tuple[str, list[Entity]]]:
+        """Anonymize multiple texts for the same thread in one call.
+
+        Uses ``detect_batch()`` if the detector exposes it (e.g.
+        ``Gliner2Detector`` with ``batch_size > 1``), allowing a single
+        model forward pass for all texts. Entity linking and memory
+        recording are sequential to preserve placeholder counter order
+        across messages.
+
+        Args:
+            texts: Ordered list of texts to anonymize.
+            thread_id: Thread identifier for memory and cache isolation.
+
+        Returns:
+            One ``(anonymized_text, entities)`` tuple per input text,
+            in the same order as ``texts``.
+        """
+        if not texts:
+            return []
+
+        self._thread_id = thread_id
+        memory = self.get_memory(thread_id)
+
+        if hasattr(self._detector, "detect_batch"):
+            raw_detections = await self._detector.detect_batch(texts)
+        else:
+            raw_detections = [await self._cached_detect(t) for t in texts]
+
+        results: list[tuple[str, list[Entity]]] = []
+        for text, detections in zip(texts, raw_detections):
+            detections = self._span_resolver.resolve(detections)
+            entities = self._entity_linker.link(text, detections)
+            entities = self._entity_resolver.resolve(entities)
+            entities = self._entity_linker.link_entities(entities, memory.all_entities)
+            memory.record(hash_sha256(text), entities)
+            anonymized = self.anonymize_with_ent(text, thread_id=thread_id)
+            await self._store_mapping(text, anonymized, entities)
+            results.append((anonymized, entities))
+
+        return results
 
     async def deanonymize_with_ent(
         self,
