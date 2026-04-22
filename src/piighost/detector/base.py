@@ -199,7 +199,8 @@ class RegexDetector:
     """Detect entities using regular expressions, one pattern per label.
 
     Useful for structured PII with a known format (phone numbers, IBANs,
-    API keys, etc.) that a model-based detector may miss.
+    API keys, etc.) that a model-based detector may miss. Patterns are
+    compiled once at construction time.
 
     Args:
         patterns: Mapping from entity label to a regex pattern string.
@@ -210,6 +211,14 @@ class RegexDetector:
     """
 
     patterns: dict[str, str] = field(default_factory=dict)
+    _compiled: dict[str, re.Pattern] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def __post_init__(self) -> None:
+        self._compiled = {
+            label: re.compile(pattern) for label, pattern in self.patterns.items()
+        }
 
     async def detect(self, text: str) -> list[Detection]:
         """Find all regex matches for the configured patterns.
@@ -222,9 +231,7 @@ class RegexDetector:
         """
         detections: list[Detection] = []
 
-        for label, pattern in self.patterns.items():
-            compiled = re.compile(pattern)
-
+        for label, compiled in self._compiled.items():
             for match in compiled.finditer(text):
                 detections.append(
                     Detection(
