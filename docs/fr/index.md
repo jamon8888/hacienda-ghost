@@ -19,6 +19,9 @@ permet de profiter des modèles les plus capables tout en gardant la main sur le
     un enjeu de confidentialité à part entière : un LLM hébergé chez un tiers ne devrait pas voir les données
     sensibles de vos utilisateurs.
 
+!!! tip "Première fois sur ces termes ?"
+    Consultez le [Glossaire](glossary.md) pour les définitions de NER, span, liaison d'entités, middleware, placeholder et plus.
+
 Il existe actuellement deux familles de solutions pour détecter les PII, les regex et les modèles NER
 (Named Entity Recognition) :
 
@@ -120,8 +123,10 @@ Voir [Architecture](architecture.md) pour les détails de chaque étape.
 
 D'autres librairies couvrent une partie du périmètre :
 
-- **[Microsoft Presidio](https://github.com/microsoft/presidio)** : détection/anonymisation très solide, mais pas
-  de liaison inter-messages native ni de middleware LangChain bidirectionnel. Excellent comme moteur de détection
+- **[Microsoft Presidio](https://github.com/microsoft/presidio)** : catalogue riche de recognizers prêts à
+  l'emploi (cartes bancaires validées par Luhn, IBAN avec checksum, SSN, passeports, emails, téléphones) enrichis
+  par scoring contextuel par mots-clés, avec un moteur NER branché sur spaCy / stanza / transformers. Pas de
+  liaison inter-messages native ni de middleware LangChain bidirectionnel. Excellent comme moteur de détection
   brut, mais laisse au développeur la charge d'orchestrer le cas conversationnel.
 - **Extensions spaCy / regex custom** : bon pour des pipelines de traitement batch, mais ne gèrent pas l'aller-retour
   anonymisation/désanonymisation au fil d'une conversation.
@@ -159,7 +164,7 @@ Chaque page suit un rôle précis du [framework Diátaxis](https://diataxis.fr/)
 | [Usage basique](examples/basic.md)                      | **Tutoriel** : usages standalone de la bibliothèque            |
 | [Intégration LangChain](examples/langchain.md)          | **Tutoriel avancé** : agent complet avec middleware            |
 | [Utiliser les détecteurs prêts à l'emploi](examples/detectors.md) | **How-to** : recettes de composition des patterns regex      |
-| [Tester sans GLiNER2](examples/testing.md)              | **How-to** : tester les pipelines avec `ExactMatchDetector`    |
+| [Tests](examples/testing.md)                            | **How-to** : tester unitairement pipelines et composants       |
 | [Référence Détecteurs](reference/detectors.md)          | **Référence** : catalogue des patterns (Communs, US, Europe)   |
 | [Étendre PIIGhost](extending.md)                        | **How-to** : créer ses propres modules                         |
 | [Référence API](reference/anonymizer.md)                | **Référence** : documentation complète de l'API                |

@@ -2,9 +2,9 @@
 icon: lucide/test-tube
 ---
 
-# Tester les pipelines sans GLiNER2
+# Tests
 
-Comment tester unitairement les pipelines PIIGhost et les composants personnalisés sans télécharger le modèle GLiNER2 (~500 Mo). `ExactMatchDetector` fournit une détection déterministe adaptée à la CI.
+Comment tester unitairement les pipelines PIIGhost et les composants personnalisés. L'approche recommandée utilise `ExactMatchDetector` pour éviter de télécharger le modèle GLiNER2 (~500 Mo) en CI, mais les patterns présentés s'appliquent à n'importe quel détecteur.
 
 ---
 
@@ -21,12 +21,18 @@ from piighost.pipeline import AnonymizationPipeline
 from piighost.placeholder import CounterPlaceholderFactory
 from piighost.span_resolver import ConfidenceSpanConflictResolver
 
+detector = ExactMatchDetector([("Patrick", "PERSON"), ("Paris", "LOCATION")])
+span_resolver = ConfidenceSpanConflictResolver()
+entity_linker = ExactEntityLinker()
+entity_resolver = MergeEntityConflictResolver()
+anonymizer = Anonymizer(CounterPlaceholderFactory())
+
 pipeline = AnonymizationPipeline(
-    detector=ExactMatchDetector([("Patrick", "PERSON"), ("Paris", "LOCATION")]),
-    span_resolver=ConfidenceSpanConflictResolver(),
-    entity_linker=ExactEntityLinker(),
-    entity_resolver=MergeEntityConflictResolver(),
-    anonymizer=Anonymizer(CounterPlaceholderFactory()),
+    detector=detector,
+    span_resolver=span_resolver,
+    entity_linker=entity_linker,
+    entity_resolver=entity_resolver,
+    anonymizer=anonymizer,
 )
 
 anonymized, entities = await pipeline.anonymize("Patrick habite à Paris.")
@@ -50,12 +56,18 @@ from piighost.span_resolver import ConfidenceSpanConflictResolver
 
 @pytest.mark.asyncio
 async def test_my_pipeline():
+    detector = ExactMatchDetector([("Alice", "PERSON")])
+    span_resolver = ConfidenceSpanConflictResolver()
+    entity_linker = ExactEntityLinker()
+    entity_resolver = MergeEntityConflictResolver()
+    anonymizer = Anonymizer(CounterPlaceholderFactory())
+
     pipeline = AnonymizationPipeline(
-        detector=ExactMatchDetector([("Alice", "PERSON")]),
-        span_resolver=ConfidenceSpanConflictResolver(),
-        entity_linker=ExactEntityLinker(),
-        entity_resolver=MergeEntityConflictResolver(),
-        anonymizer=Anonymizer(CounterPlaceholderFactory()),
+        detector=detector,
+        span_resolver=span_resolver,
+        entity_linker=entity_linker,
+        entity_resolver=entity_resolver,
+        anonymizer=anonymizer,
     )
 
     anonymized, entities = await pipeline.anonymize("Alice habite à Lyon.")

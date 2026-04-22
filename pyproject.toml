@@ -1,6 +1,6 @@
 [project]
 name = "piighost"
-version = "0.8.0"
+version = "0.7.0"
 description = "PII anonymization middleware for AI agent conversations using LangChain integration."
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,21 +34,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 requires-python = ">=3.10"
-dependencies = [
-    "typer>=0.12",
-    "rich>=13.7",
-    "pydantic>=2.7",
-    "tomli; python_version < '3.11'",
-    "tomli-w>=1.0",
-    "psutil>=5.9",
-    "portalocker>=2.8",
-    "httpx>=0.27",
-    "starlette>=0.37",
-    "uvicorn>=0.30",
-]
-
-[project.scripts]
-piighost = "piighost.cli.main:app"
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/Athroniaeth/piighost"
@@ -57,10 +43,6 @@ Issues = "https://github.com/Athroniaeth/piighost/issues"
 Changelog = "https://github.com/Athroniaeth/piighost/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-docker = [
-    "httpx>=0.28",
-    "pyyaml>=6",
-]
 gliner2 = [
     "gliner2>=1.2",
 ]
@@ -90,51 +72,8 @@ transformers = [
 llm = [
     "langchain-core>=0.3",
 ]
-haystack = [
-    "haystack-ai>=2.8",
-    "aiocache>=0.12",
-]
-haystack-lancedb = [
-    "piighost[haystack]",
-    "lancedb-haystack>=0.1",
-]
-haystack-embeddings-local = [
-    "piighost[haystack]",
-    "sentence-transformers>=3.3",
-]
-haystack-embeddings-mistral = [
-    "piighost[haystack]",
-    "mistral-haystack>=0.1",
-]
-index = [
-    "kreuzberg>=0.5",
-    "lancedb>=0.15",
-    "rank-bm25>=0.2.2",
-    "sentence-transformers>=3.3",
-]
-mcp = [
-    "fastmcp>=2.0",
-]
-langchain-lancedb = [
-    "piighost[langchain]",
-    "langchain-community>=0.3",
-    "lancedb>=0.15",
-]
-langchain-kreuzberg = [
-    "piighost[langchain]",
-    "langchain-kreuzberg>=0.1",
-]
-langchain-embeddings-local = [
-    "piighost[langchain]",
-    "langchain-huggingface>=0.2",
-    "sentence-transformers>=3.3",
-]
-langchain-embeddings-mistral = [
-    "piighost[langchain]",
-    "langchain-mistralai>=0.2",
-]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,haystack,index,mcp]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm]",
 ]
 
 [build-system]
@@ -179,9 +118,6 @@ llm = [
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/piighost"
-markers = [
-    "slow: tests that require optional heavy backends (LanceDB, real GLiNER2)",
-]
 
 [tool.coverage.report]
 show_missing = true

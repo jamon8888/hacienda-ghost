@@ -34,9 +34,9 @@ def test_build_embedder_stub_env(monkeypatch):
 
 def test_build_embedder_none_backend(monkeypatch):
     monkeypatch.delenv("PIIGHOST_EMBEDDER", raising=False)
-    cfg = ServiceConfig()
-    # default backend is "none"
-    emb = build_embedder(cfg.embedder)
+    # Explicit backend="none" — independent of the current default, which is
+    # "local" so a fresh install has working vector search OOTB.
+    emb = build_embedder(EmbedderSection(backend="none"))
     assert isinstance(emb, NullEmbedder)
 
 

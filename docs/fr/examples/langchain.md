@@ -31,14 +31,29 @@ Pour utiliser le middleware LangChain, installez les dependances supplementaires
 
 ## Structure de l'integration
 
-```
-GLiNER2 model
-    └── GlinerDetector
-            └── ThreadAnonymizationPipeline
-                    ├── AnonymizationPipeline (base)
-                    ├── ConversationMemory
-                    └── PIIAnonymizationMiddleware
-                                └── create_agent(middleware=[...])
+```mermaid
+flowchart TB
+    classDef model fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef comp fill:#90CAF9,stroke:#1565C0,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef agent fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    MODEL["`**Modèle GLiNER2**
+    _fastino/gliner2-multi-v1_`"]:::model
+    DET["`**Gliner2Detector**
+    _encapsule le modèle NER_`"]:::comp
+    PIPE["`**ThreadAnonymizationPipeline**
+    _étend AnonymizationPipeline_
+    _contient ConversationMemory_`"]:::comp
+    MW["`**PIIAnonymizationMiddleware**
+    _hooks LangChain_`"]:::mw
+    AGENT["`**create_agent(middleware=[...])**
+    _point d'entrée LangGraph_`"]:::agent
+
+    MODEL -->|encapsulé par| DET
+    DET -->|injecté dans| PIPE
+    PIPE -->|passé à| MW
+    MW -->|enregistré auprès de| AGENT
 ```
 
 ---
@@ -121,12 +136,20 @@ informations personnelles."
 # Charger le modele GLiNER2 (telechargement HuggingFace ~500 Mo a la premiere execution)
 extractor = GLiNER2.from_pretrained("fastino/gliner2-multi-v1")
 
+# Instancier chaque composant
+detector = Gliner2Detector(model=extractor, labels=["PERSON", "LOCATION"], threshold=0.5)
+span_resolver = ConfidenceSpanConflictResolver()
+entity_linker = ExactEntityLinker()
+entity_resolver = MergeEntityConflictResolver()
+anonymizer = Anonymizer(CounterPlaceholderFactory())
+
+# Assembler le pipeline puis le middleware
 pipeline = ThreadAnonymizationPipeline(
-    detector=Gliner2Detector(model=extractor, labels=["PERSON", "LOCATION"], threshold=0.5),
-    span_resolver=ConfidenceSpanConflictResolver(),
-    entity_linker=ExactEntityLinker(),
-    entity_resolver=MergeEntityConflictResolver(),
-    anonymizer=Anonymizer(CounterPlaceholderFactory()),
+    detector=detector,
+    span_resolver=span_resolver,
+    entity_linker=entity_linker,
+    entity_resolver=entity_resolver,
+    anonymizer=anonymizer,
 )
 middleware = PIIAnonymizationMiddleware(pipeline=pipeline)
 
@@ -150,42 +173,64 @@ Le `PIIAnonymizationMiddleware` intercepte chaque tour de l'agent en trois point
 
 ### `abefore_model` avant le LLM
 
-```
-Utilisateur : "Envoie un email a Patrick a Paris"
-      ↓
-Middleware  : detection NER via pipeline.anonymize()
-            → "Envoie un email a <<PERSON_1>> a <<LOCATION_1>>"
-      ↓
-LLM voit   : "Envoie un email a <<PERSON_1>> a <<LOCATION_1>>"
+```mermaid
+flowchart LR
+    classDef user fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    U["`**Utilisateur**
+    _'Envoie un email à Patrick à Paris'_`"]:::user
+    M["`**Middleware**
+    _détection NER via_
+    _pipeline.anonymize()_`"]:::mw
+    L["`**Le LLM voit**
+    _'Envoie un email à &lt;&lt;PERSON_1&gt;&gt;_
+    _à &lt;&lt;LOCATION_1&gt;&gt;'_`"]:::llm
+
+    U --> M --> L
 ```
 
 ### `awrap_tool_call` autour des outils
 
-```
-LLM appelle  : send_email(to="<<PERSON_1>>", subject="...", body="...")
-      ↓
-Middleware   : desanonymise les args
-             → send_email(to="Patrick", subject="...", body="...")
-      ↓
-Outil recoit : to="Patrick"  ← vraie valeur
-      ↓
-Outil retourne: "Email envoye a Patrick."
-      ↓
-Middleware   : reanonymise la reponse
-             → "Email envoye a <<PERSON_1>>."
-      ↓
-LLM voit     : "Email envoye a <<PERSON_1>>."
+```mermaid
+flowchart TB
+    classDef tool fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    L1["`**Le LLM appelle**
+    _send_email(to='&lt;&lt;PERSON_1&gt;&gt;', ...)_`"]:::llm
+    M1["`**Middleware**
+    _désanonymise les arguments_`"]:::mw
+    T1["`**L'outil reçoit**
+    _to='Patrick' (vraie valeur)_`"]:::tool
+    T2["`**L'outil retourne**
+    _'Email envoyé à Patrick.'_`"]:::tool
+    M2["`**Middleware**
+    _réanonymise la réponse_`"]:::mw
+    L2["`**Le LLM voit**
+    _'Email envoyé à &lt;&lt;PERSON_1&gt;&gt;.'_`"]:::llm
+
+    L1 --> M1 --> T1 --> T2 --> M2 --> L2
 ```
 
-### `aafter_model` apres le LLM
+### `aafter_model` après le LLM
 
-```
-LLM repond   : "C'est fait ! Email envoye a <<PERSON_1>>."
-      ↓
-Middleware   : desanonymise tous les messages
-             → "C'est fait ! Email envoye a Patrick."
-      ↓
-Utilisateur  : "C'est fait ! Email envoye a Patrick."
+```mermaid
+flowchart LR
+    classDef user fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    L["`**Le LLM répond**
+    _'C'est fait ! Email envoyé à &lt;&lt;PERSON_1&gt;&gt;.'_`"]:::llm
+    M["`**Middleware**
+    _désanonymise tous les messages_`"]:::mw
+    U["`**L'utilisateur voit**
+    _'C'est fait ! Email envoyé à Patrick.'_`"]:::user
+
+    L --> M --> U
 ```
 
 ---
@@ -203,78 +248,4 @@ async def main():
     # C'est fait ! Email envoye a Patrick.
 
 asyncio.run(main())
-```
-
----
-
-## Avec Langfuse (observabilite)
-
-L'exemple complet inclut l'integration Langfuse pour tracer les appels LLM :
-
-```python
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
-
-langfuse = get_client()
-langfuse_handler = CallbackHandler()
-
-graph = create_agent(
-    model="openai:gpt-5.4",
-    system_prompt=system_prompt,
-    tools=[send_email, get_weather],
-    middleware=[middleware],
-    callbacks=[langfuse_handler],  # (1)!
-)
-```
-
-1. Les callbacks Langfuse s'ajoutent a `create_agent`. Toutes les interactions LLM sont tracees avec les textes **anonymises** (le tracage ne voit jamais de donnees personnelles).
-
----
-
-## Deploiement avec Aegra
-
-L'exemple `examples/graph/` est concu pour etre deploye avec [Aegra](https://aegra.dev/) (alternative auto-hebergee a LangSmith).
-
-Fichier `aegra.json` :
-
-```json
-{
-  "graph": "./src/graph/graph.py:graph",
-  "http": "./src/graph/app.py:app",
-  "ttl": {
-    "interval_minutes": 60,
-    "default_minutes": 20160
-  }
-}
-```
-
-```bash
-# Demarrer le serveur de developpement (graph + FastAPI sur le port 8000)
-uv run aegra dev
-
-# Stack complete avec PostgreSQL
-docker compose up --build
-```
-
----
-
-## Variables d'environnement
-
-Copiez `.env.example` en `.env` et renseignez :
-
-```bash
-# LLM
-OPENAI_API_KEY=sk-...
-# ou
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Aegra (obligatoire)
-AEGRA_CONFIG=aegra.json
-
-# Base de donnees
-DATABASE_URL=postgresql://user:pass@localhost:5432/piighost
-
-# Observabilite (optionnel)
-LANGFUSE_PUBLIC_KEY=...
-LANGFUSE_SECRET_KEY=...
 ```

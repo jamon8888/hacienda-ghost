@@ -31,14 +31,29 @@ To use the LangChain middleware, install the additional dependencies:
 
 ## Integration structure
 
-```
-GLiNER2 model
-    └── GlinerDetector
-            └── ThreadAnonymizationPipeline
-                    ├── AnonymizationPipeline (base)
-                    ├── ConversationMemory
-                    └── PIIAnonymizationMiddleware
-                                └── create_agent(middleware=[...])
+```mermaid
+flowchart TB
+    classDef model fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef comp fill:#90CAF9,stroke:#1565C0,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef agent fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    MODEL["`**GLiNER2 model**
+    _fastino/gliner2-multi-v1_`"]:::model
+    DET["`**Gliner2Detector**
+    _wraps the NER model_`"]:::comp
+    PIPE["`**ThreadAnonymizationPipeline**
+    _extends AnonymizationPipeline_
+    _holds ConversationMemory_`"]:::comp
+    MW["`**PIIAnonymizationMiddleware**
+    _LangChain hooks_`"]:::mw
+    AGENT["`**create_agent(middleware=[...])**
+    _LangGraph entry point_`"]:::agent
+
+    MODEL -->|wrapped by| DET
+    DET -->|injected into| PIPE
+    PIPE -->|passed to| MW
+    MW -->|registered with| AGENT
 ```
 
 ---
@@ -160,42 +175,64 @@ graph = create_agent(
 
 ### `abefore_model` before the LLM
 
-```
-User       : "Send an email to Patrick in Paris"
-      ↓
-Middleware : NER detection via pipeline.anonymize()
-           → "Send an email to <<PERSON_1>> in <<LOCATION_1>>"
-      ↓
-LLM sees   : "Send an email to <<PERSON_1>> in <<LOCATION_1>>"
+```mermaid
+flowchart LR
+    classDef user fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    U["`**User**
+    _'Send an email to Patrick in Paris'_`"]:::user
+    M["`**Middleware**
+    _NER detection via_
+    _pipeline.anonymize()_`"]:::mw
+    L["`**LLM sees**
+    _'Send an email to &lt;&lt;PERSON_1&gt;&gt;_
+    _in &lt;&lt;LOCATION_1&gt;&gt;'_`"]:::llm
+
+    U --> M --> L
 ```
 
 ### `awrap_tool_call` around tools
 
-```
-LLM calls    : send_email(to="<<PERSON_1>>", subject="...", body="...")
-      ↓
-Middleware   : deanonymize args
-             → send_email(to="Patrick", subject="...", body="...")
-      ↓
-Tool receives: to="Patrick"  ← real value
-      ↓
-Tool returns : "Email successfully sent to Patrick."
-      ↓
-Middleware   : reanonymize response
-             → "Email successfully sent to <<PERSON_1>>."
-      ↓
-LLM sees     : "Email successfully sent to <<PERSON_1>>."
+```mermaid
+flowchart TB
+    classDef tool fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    L1["`**LLM calls**
+    _send_email(to='&lt;&lt;PERSON_1&gt;&gt;', ...)_`"]:::llm
+    M1["`**Middleware**
+    _deanonymize args_`"]:::mw
+    T1["`**Tool receives**
+    _to='Patrick' (real value)_`"]:::tool
+    T2["`**Tool returns**
+    _'Email successfully sent to Patrick.'_`"]:::tool
+    M2["`**Middleware**
+    _reanonymize response_`"]:::mw
+    L2["`**LLM sees**
+    _'Email successfully sent to &lt;&lt;PERSON_1&gt;&gt;.'_`"]:::llm
+
+    L1 --> M1 --> T1 --> T2 --> M2 --> L2
 ```
 
 ### `aafter_model` after the LLM
 
-```
-LLM replies  : "Done! Email sent to <<PERSON_1>>."
-      ↓
-Middleware   : deanonymize all messages
-             → "Done! Email sent to Patrick."
-      ↓
-User sees    : "Done! Email sent to Patrick."
+```mermaid
+flowchart LR
+    classDef user fill:#A5D6A7,stroke:#2E7D32,color:#000
+    classDef mw fill:#BBDEFB,stroke:#1565C0,color:#000
+    classDef llm fill:#FFF9C4,stroke:#F9A825,color:#000
+
+    L["`**LLM replies**
+    _'Done! Email sent to &lt;&lt;PERSON_1&gt;&gt;.'_`"]:::llm
+    M["`**Middleware**
+    _deanonymize all messages_`"]:::mw
+    U["`**User sees**
+    _'Done! Email sent to Patrick.'_`"]:::user
+
+    L --> M --> U
 ```
 
 ---
@@ -213,78 +250,4 @@ async def main():
     # Done! Email sent to Patrick.
 
 asyncio.run(main())
-```
-
----
-
-## With Langfuse (observability)
-
-The full example includes Langfuse integration to trace LLM calls:
-
-```python
-from langfuse import get_client
-from langfuse.langchain import CallbackHandler
-
-langfuse = get_client()
-langfuse_handler = CallbackHandler()
-
-graph = create_agent(
-    model="openai:gpt-5.4",
-    system_prompt=system_prompt,
-    tools=[send_email, get_weather],
-    middleware=[middleware],
-    callbacks=[langfuse_handler],  # (1)!
-)
-```
-
-1. Langfuse callbacks are added to `create_agent`. All LLM interactions are traced with **anonymized** text (the tracing layer never sees personal data).
-
----
-
-## Deployment with Aegra
-
-The `examples/graph/` example is designed to be deployed with [Aegra](https://aegra.dev/) (a self-hosted LangSmith alternative).
-
-`aegra.json` file:
-
-```json
-{
-  "graph": "./src/graph/graph.py:graph",
-  "http": "./src/graph/app.py:app",
-  "ttl": {
-    "interval_minutes": 60,
-    "default_minutes": 20160
-  }
-}
-```
-
-```bash
-# Start the development server (graph + FastAPI on port 8000)
-uv run aegra dev
-
-# Full stack with PostgreSQL
-docker compose up --build
-```
-
----
-
-## Environment variables
-
-Copy `.env.example` to `.env` and fill in:
-
-```bash
-# LLM
-OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Aegra (required)
-AEGRA_CONFIG=aegra.json
-
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/piighost
-
-# Observability (optional)
-LANGFUSE_PUBLIC_KEY=...
-LANGFUSE_SECRET_KEY=...
 ```
