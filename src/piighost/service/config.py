@@ -77,6 +77,21 @@ class SafetySection(BaseModel):
     redact_errors: bool = True
 
 
+class IncrementalSection(BaseModel):
+    """Tiered batch thresholds for incremental indexing.
+
+    Tiers from the incremental-indexing spec:
+      - SMALL  : <= small_max_files AND total size <  small_max_bytes
+      - MEDIUM : <= medium_max_files AND total size <= medium_max_bytes
+      - LARGE  : anything bigger
+    """
+
+    small_max_files: int = 2
+    small_max_bytes: int = 5 * 1024 * 1024        # 5 MB
+    medium_max_files: int = 10
+    medium_max_bytes: int = 50 * 1024 * 1024       # 50 MB
+
+
 class ServiceConfig(BaseModel):
     schema_version: int = 1
     vault: VaultSection = Field(default_factory=VaultSection)
@@ -86,6 +101,7 @@ class ServiceConfig(BaseModel):
     index: IndexSection = Field(default_factory=IndexSection)
     daemon: DaemonSection = Field(default_factory=DaemonSection)
     safety: SafetySection = Field(default_factory=SafetySection)
+    incremental: IncrementalSection = Field(default_factory=IncrementalSection)
 
     @classmethod
     def from_toml(cls, path: Path) -> "ServiceConfig":
