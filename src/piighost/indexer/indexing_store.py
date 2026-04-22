@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 CURRENT_SCHEMA_VERSION = 1
 
@@ -173,3 +175,20 @@ class IndexingStore:
             "UPDATE indexed_files SET status = 'deleted' WHERE project_id = ? AND file_path = ?",
             (project_id, file_path),
         )
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Context manager for atomic batch operations.
+
+        Wraps operations in BEGIN IMMEDIATE / COMMIT / ROLLBACK.
+        The store uses autocommit (isolation_level=None), so transactions
+        must be opened and closed explicitly.
+        """
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+        else:
+            self._conn.execute("COMMIT")

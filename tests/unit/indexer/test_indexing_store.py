@@ -143,3 +143,35 @@ def test_mark_deleted_sets_status(tmp_path: Path) -> None:
         assert got.status == "deleted"
     finally:
         store.close()
+
+
+def test_batch_commits_on_success(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    try:
+        with store.batch():
+            store.upsert(FileRecord(
+                project_id="p", file_path="/a",
+                file_mtime=1.0, file_size=1, content_hash="h" * 64,
+                indexed_at=1.0, status="success",
+                error_message=None, entity_count=1, chunk_count=1,
+            ))
+        assert store.get_by_path("p", "/a") is not None
+    finally:
+        store.close()
+
+
+def test_batch_rolls_back_on_exception(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+    try:
+        with pytest.raises(RuntimeError):
+            with store.batch():
+                store.upsert(FileRecord(
+                    project_id="p", file_path="/a",
+                    file_mtime=1.0, file_size=1, content_hash="h" * 64,
+                    indexed_at=1.0, status="success",
+                    error_message=None, entity_count=1, chunk_count=1,
+                ))
+                raise RuntimeError("boom")
+        assert store.get_by_path("p", "/a") is None
+    finally:
+        store.close()
