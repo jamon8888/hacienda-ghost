@@ -54,6 +54,8 @@ class VaultPage(BaseModel):
 
 class IndexReport(BaseModel):
     indexed: int
+    modified: int = 0
+    deleted: int = 0
     skipped: int
     unchanged: int = 0
     errors: list[str] = Field(default_factory=list)
@@ -86,3 +88,25 @@ class IndexStatus(BaseModel):
     total_docs: int
     total_chunks: int
     files: list[IndexedFileEntry]
+
+
+class FileChangeEntry(BaseModel):
+    file_path: str
+    size: int
+
+
+class FolderChangesResult(BaseModel):
+    folder: str
+    project: str
+    new: list[FileChangeEntry] = Field(default_factory=list)
+    modified: list[FileChangeEntry] = Field(default_factory=list)
+    deleted: list[str] = Field(default_factory=list)
+    unchanged_count: int = 0
+    tier: str = "empty"   # BatchTier string value
+
+
+class CancelResult(BaseModel):
+    project: str
+    cancelled: bool
+    files_processed: int = 0
+    files_skipped: int = 0

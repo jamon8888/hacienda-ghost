@@ -29,6 +29,8 @@ from piighost.service.models import (
     VaultStatsModel,
 )
 from piighost.vault import AuditLogger, Vault, VaultEntry
+from piighost.indexer.indexing_store import IndexingStore
+from piighost.indexer.cancellation import CancellationToken, CancellationRegistry
 
 _TOKEN_RE = re.compile(r"<[A-Z_]+:[0-9a-f]{8}>")
 
@@ -72,6 +74,10 @@ class _ProjectService:
         self._bm25 = BM25Index(self._project_dir / ".piighost" / "bm25.pkl")
         self._bm25.load()
         self._reranker = reranker
+        self._indexing_store = IndexingStore.open(
+            self._project_dir / "indexing.sqlite"
+        )
+        self._cancel_token: CancellationToken | None = None
 
     @classmethod
     async def create(
@@ -409,6 +415,7 @@ class _ProjectService:
         pass
 
     async def close(self) -> None:
+        self._indexing_store.close()
         self._vault.close()
 
     # ---- helpers ----
@@ -452,6 +459,7 @@ class PIIGhostService:
         self._registry = registry
         self._cache: "OrderedDict[str, _ProjectService]" = OrderedDict()
         self._detector_override: _Detector | None = None
+        self._cancel_registry = CancellationRegistry()
 
     @classmethod
     async def create(
