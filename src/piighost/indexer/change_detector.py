@@ -77,10 +77,18 @@ class ChangeDetector:
 
     def _classify(self, paths: list[Path]) -> ChangeSet:
         on_disk = {p.resolve() for p in paths}
+        # Only consider successfully-indexed files for skip detection.
+        # Files with status "deleted" or "error" are excluded:
+        #   - "deleted"  → we know they are gone, no path on disk
+        #   - "error"    → stored content_hash is "" (poisoned); mtime+size
+        #                  may still match if the file is unchanged, which
+        #                  would permanently classify it as "unchanged" instead
+        #                  of retrying it.  Filtering it out makes it appear
+        #                  as "new" so every run retries the failed file.
         indexed = {
             r.file_path: r
             for r in self._store.list_for_project(self._project_id)
-            if r.status != "deleted"
+            if r.status == "success"
         }
 
         new: list[Path] = []

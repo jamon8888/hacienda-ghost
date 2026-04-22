@@ -19,10 +19,14 @@ from piighost.service.config import ServiceConfig
 from piighost.service.errors import AnonymizationFailed
 from piighost.service.models import (
     AnonymizeResult,
+    CancelResult,
     DetectionResult,
     EntityRef,
+    FolderChangesResult,
     IndexedFileEntry,
+    IndexReport,
     IndexStatus,
+    QueryResult,
     RehydrateResult,
     VaultEntryModel,
     VaultPage,
@@ -31,6 +35,8 @@ from piighost.service.models import (
 from piighost.vault import AuditLogger, Vault, VaultEntry
 from piighost.indexer.indexing_store import IndexingStore
 from piighost.indexer.cancellation import CancellationToken, CancellationRegistry
+from piighost.service.migration import migrate_to_v3
+from piighost.vault.project_registry import ProjectRegistry, ProjectInfo
 
 _TOKEN_RE = re.compile(r"<[A-Z_]+:[0-9a-f]{8}>")
 
@@ -246,6 +252,13 @@ class _ProjectService:
 
         unchanged = len(unchanged_paths)
 
+        # NOTE: batch() opens BEGIN IMMEDIATE and holds it across the async
+        # I/O loop below (extract_text + anonymize + embed).  This is safe for
+        # the single-threaded asyncio event loop used by the MCP server — only
+        # one coroutine runs at a time, so no second caller can attempt a
+        # concurrent BEGIN IMMEDIATE on the same connection.  If you add a
+        # concurrent caller in the future, move the upsert() calls outside the
+        # batch() and flush results in a second synchronous pass.
         with self._indexing_store.batch():
             # Handle deletions first
             for p in deleted_paths:
@@ -528,10 +541,6 @@ class _ProjectService:
             last_seen_at=v.last_seen_at,
             occurrence_count=v.occurrence_count,
         )
-
-
-from piighost.service.migration import migrate_to_v3
-from piighost.vault.project_registry import ProjectRegistry, ProjectInfo
 
 
 class PIIGhostService:

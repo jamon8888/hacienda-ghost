@@ -15,18 +15,22 @@ class CancellationToken:
 
     Create a fresh token via ``CancellationRegistry.reset()`` to start a
     new batch after cancellation.
+
+    Uses ``threading.Event`` so that reads and writes of the flag are
+    safe under free-threaded Python (3.13+ with the GIL disabled) and
+    across ``concurrent.futures`` thread pools.
     """
 
     def __init__(self) -> None:
-        self._flag = False
+        self._event = threading.Event()
 
     @property
     def is_cancelled(self) -> bool:
-        return self._flag
+        return self._event.is_set()
 
     def cancel(self) -> None:
         """Set the cancellation flag. Idempotent."""
-        self._flag = True
+        self._event.set()
 
 
 class CancellationRegistry:

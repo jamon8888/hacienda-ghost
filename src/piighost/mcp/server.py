@@ -11,7 +11,6 @@ from fastmcp import FastMCP
 
 from piighost.service.config import ServiceConfig
 from piighost.service.core import PIIGhostService
-from piighost.service.models import VaultEntryModel
 
 
 def _harden_stdio_channel() -> None:

@@ -95,6 +95,11 @@ class IndexingStore:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        # Give concurrent readers / a second writer up to 5 s before raising
+        # OperationalError.  The indexer's batch() holds BEGIN IMMEDIATE while
+        # async I/O (extraction + embedding) runs, so a small timeout avoids
+        # an immediate crash if two index_path calls race on the same project.
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.executescript(_DDL)
         cur = conn.execute("SELECT COUNT(*) FROM indexing_meta")
         if cur.fetchone()[0] == 0:
