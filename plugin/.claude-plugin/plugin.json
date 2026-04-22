@@ -1,0 +1,8 @@
+{
+  "name": "hacienda",
+  "version": "0.1.0",
+  "description": "PII-safe RAG over your client folders, directly inside Claude Desktop. Built for regulated professionals (avocats, notaires, experts-comptables, médecins) bound by professional secrecy. Indexes folders locally, redacts outbound requests, cites sources.",
+  "author": {
+    "name": "piighost team"
+  }
+}
