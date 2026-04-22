@@ -376,6 +376,27 @@ Ajoutez la section `mcpServers` :
 
 Redémarrez Claude Desktop.
 
+#### Méthode 3 — Plugin Cowork `hacienda`
+
+Pour les professionnels qui travaillent dossier par dossier dans **Claude Cowork**, le dépôt fournit un plugin prêt-à-l'emploi sous [`plugin/`](plugin/README.md) — nom de code **hacienda**. Il enveloppe le serveur MCP `piighost` avec des *skills* en langage naturel dédiées au secret professionnel (avocats, notaires, experts-comptables, médecins, CGP/CIF).
+
+```bash
+claude plugins add jamon8888/hacienda
+```
+
+Ouvrez ensuite un dossier client dans Cowork (glisser-déposer ou **File → Open Folder**) : le plugin indexe automatiquement le dossier et expose les commandes :
+
+| Commande | Rôle |
+|---|---|
+| `/index` | (Ré-)indexer le dossier actif |
+| `/ask` | Question sur le dossier, réponse avec citations (PII anonymisée à la sortie) |
+| `/status` | État de l'index et du coffre-fort |
+| `/audit` | Rapport de la session courante (anonymisations, révélations) |
+| `/redact-outbound` | Force l'anonymisation des brouillons sortants (emails, Slack…) |
+| `/knowledge-base` | Navigation documentaire dans le dossier |
+
+Contrairement aux bundles MCPB, le plugin Cowork **n'ajoute aucun code exécutable** : il se contente de déclarer un serveur MCP (`piighost`) et des skills en prose. Voir [`plugin/README.md`](plugin/README.md) pour la liste complète, les limites connues (pas de hook `PreToolUse` côté Cowork v1, un dossier actif à la fois) et les contrats de support payant.
+
 ### Installation Docker
 
 Pour les cabinets qui préfèrent une installation isolée, reproductible, et séparée de leur environnement Python local, Hacienda Ghost fournit une pile Docker complète avec **images signées cosign**, **sauvegardes chiffrées**, et **mises à jour vérifiées**.
