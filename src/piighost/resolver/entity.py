@@ -88,39 +88,42 @@ class MergeEntityConflictResolver:
         if not entities:
             return []
 
-        # Start with a copy so we don't mutate the input.
-        result: list[Entity] = list(entities)
+        n = len(entities)
+        parent = list(range(n))
 
-        # Keep merging until no more conflicts are found.
-        # On each pass, we look for two entities that share a detection
-        # and merge them into one. We repeat until a full pass finds
-        # no conflicts (meaning all remaining entities are independent).
-        changed = True
-        while changed:
-            changed = False
+        def find(x: int) -> int:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]  # path halving
+                x = parent[x]
+            return x
 
-            for i in range(len(result)):
-                for j in range(i + 1, len(result)):
-                    if self.have_conflict(result[i], result[j]):
-                        # Merge entity j into entity i (deduplicate detections).
-                        seen: set[Detection] = set(result[i].detections)
-                        merged_detections = list(result[i].detections)
-                        for d in result[j].detections:
-                            if d not in seen:
-                                seen.add(d)
-                                merged_detections.append(d)
+        def union(x: int, y: int) -> None:
+            root_x, root_y = find(x), find(y)
+            if root_x != root_y:
+                parent[root_x] = root_y
 
-                        # Replace i with the merged entity, remove j.
-                        result[i] = Entity(detections=tuple(merged_detections))
-                        result.pop(j)
+        for i in range(n):
+            for j in range(i + 1, n):
+                if self.have_conflict(entities[i], entities[j]):
+                    union(i, j)
 
-                        # Restart the scan indices have shifted after pop.
-                        changed = True
-                        break
+        groups: dict[int, list[int]] = {}
+        for i in range(n):
+            root = find(i)
+            if root not in groups:
+                groups[root] = []
+            groups[root].append(i)
 
-                # Break the outer for-loop too so we restart the while.
-                if changed:
-                    break
+        result: list[Entity] = []
+        for indices in groups.values():
+            seen: set[Detection] = set()
+            merged: list[Detection] = []
+            for idx in indices:
+                for d in entities[idx].detections:
+                    if d not in seen:
+                        seen.add(d)
+                        merged.append(d)
+            result.append(Entity(detections=tuple(merged)))
 
         result.sort(key=lambda e: min(d.position.start_pos for d in e.detections))
         return result
