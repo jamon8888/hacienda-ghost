@@ -63,12 +63,13 @@ def test_modified_file_is_reindexed(svc, tmp_path):
     r1 = asyncio.run(svc.index_path(f, project="default"))
     assert r1.indexed == 1
 
-    # Modify mtime explicitly so the skip check detects a change
+    # Change content and bump mtime so the change detector classifies as modified
+    f.write_text("Alice works in Berlin on GDPR contracts.")
     new_mtime = f.stat().st_mtime + 2.0
     os.utime(f, (new_mtime, new_mtime))
 
     r2 = asyncio.run(svc.index_path(f, project="default"))
-    assert r2.indexed == 1
+    assert r2.modified == 1
     assert r2.unchanged == 0
 
 

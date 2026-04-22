@@ -11,7 +11,6 @@ from fastmcp import FastMCP
 
 from piighost.service.config import ServiceConfig
 from piighost.service.core import PIIGhostService
-from piighost.service.models import VaultEntryModel
 
 
 def _harden_stdio_channel() -> None:
@@ -136,6 +135,33 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
                 text, k=k, project=project, filter=qfilter, rerank=rerank, top_n=top_n
             )
             return result.model_dump()
+
+    @mcp.tool(
+        description=(
+            "Scan a folder and return which files are new / modified / "
+            "deleted / unchanged, plus a tier hint (small/medium/large) "
+            "so the caller can decide whether to auto-index or ask the user."
+        )
+    )
+    async def check_folder_changes(
+        folder: str, recursive: bool = True, project: str = ""
+    ) -> dict:
+        project_arg = project if project else None
+        result = await svc.check_folder_changes(
+            folder, recursive=recursive, project=project_arg
+        )
+        return result.model_dump()
+
+    @mcp.tool(
+        description=(
+            "Signal a running index_path() to stop after the current file. "
+            "The currently-processing file completes; remaining files are "
+            "skipped. Safe to call even when no index is running."
+        )
+    )
+    async def cancel_indexing(project: str = "default") -> dict:
+        result = await svc.cancel_indexing(project=project)
+        return result.model_dump()
 
     @mcp.tool(description="Full-text search in the PII vault by original value")
     async def vault_search(
