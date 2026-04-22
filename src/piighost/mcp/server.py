@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import os
+import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastmcp import FastMCP
@@ -8,6 +12,73 @@ from fastmcp import FastMCP
 from piighost.service.config import ServiceConfig
 from piighost.service.core import PIIGhostService
 from piighost.service.models import VaultEntryModel
+
+
+def _harden_stdio_channel() -> None:
+    """Isolate the JSON-RPC stdout channel from third-party noise.
+
+    Why: stdio MCP uses fd 1 for protocol frames. Any library that prints
+    to stdout (gliner2 model config banner, torch warnings, tqdm, etc.)
+    corrupts the stream. On Windows, emoji prints also crash with
+    UnicodeEncodeError under the default cp1252 codec.
+
+    How: dup fd 1 to a private fd for the protocol, redirect fd 1 -> fd 2
+    so OS-level stdout writes go to stderr, reroute sys.stdout to stderr
+    so Python print() also lands on stderr, force UTF-8 on both stderr and
+    stdin, and patch stdio_server() to use the saved protocol fd.
+    """
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, OSError):
+        pass
+    try:
+        sys.stdin.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        protocol_fd = os.dup(1)
+    except OSError:
+        return
+
+    try:
+        os.dup2(2, 1)
+    except OSError:
+        os.close(protocol_fd)
+        return
+
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+    sys.stdout = sys.stderr
+
+    protocol_stream = io.TextIOWrapper(
+        os.fdopen(protocol_fd, "wb", buffering=0),
+        encoding="utf-8",
+        write_through=True,
+    )
+
+    import anyio
+    import mcp.server.stdio as _stdio_mod
+
+    _original_stdio_server = _stdio_mod.stdio_server
+
+    @asynccontextmanager
+    async def _patched_stdio_server(stdin=None, stdout=None):
+        if stdout is None:
+            stdout = anyio.wrap_file(protocol_stream)
+        async with _original_stdio_server(stdin=stdin, stdout=stdout) as streams:
+            yield streams
+
+    _stdio_mod.stdio_server = _patched_stdio_server
+    for mod_name in (
+        "fastmcp.server.low_level",
+        "fastmcp.server.mixins.transport",
+    ):
+        mod = sys.modules.get(mod_name)
+        if mod is not None and hasattr(mod, "stdio_server"):
+            mod.stdio_server = _patched_stdio_server
 
 
 def _indexing_available() -> bool:
@@ -190,6 +261,9 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
 
 
 def run_mcp(vault_dir: Path, *, transport: str = "stdio") -> None:
+    if transport == "stdio":
+        _harden_stdio_channel()
+
     async def _start() -> None:
         mcp, svc = await build_mcp(vault_dir)
         try:
