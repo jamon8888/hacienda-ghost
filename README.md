@@ -1,6 +1,6 @@
 # Hacienda Ghost
 
-> **protège vos données dans votre hacienda numérique.**
+> **Protège vos données dans votre hacienda numérique.**
 
 [![CI](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml/badge.svg)](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml)
 [![Docker](https://github.com/jamon8888/hacienda-ghost/actions/workflows/docker.yml/badge.svg)](https://github.com/jamon8888/hacienda-ghost/actions/workflows/docker.yml)
@@ -10,7 +10,7 @@
 [![Conformité RGPD](https://img.shields.io/badge/conforme-RGPD-blue.svg)](#conformité-rgpd--ai-act)
 [![Images signées cosign](https://img.shields.io/badge/images-signées%20cosign-4B32C3.svg)](#vérification-de-la-signature-dimage)
 
-**Hacienda Ghost** est un middleware de souveraineté des données pour agents IA. Il détecte les informations personnelles (PII) dans vos prompts, vos documents les remplace par des variantes  opaques avant envoi au LLM, puis les réhydrate dans la réponse. **Vos données sensibles ne quittent jamais votre poste.**
+**Hacienda Ghost** est un middleware de souveraineté des données pour agents IA. Le paquet Python s'appelle [`piighost`](https://pypi.org/project/piighost/). Il détecte les informations personnelles (PII) dans vos prompts et vos documents, les remplace par des jetons opaques avant envoi au LLM, puis réhydrate la réponse localement. **Vos données sensibles ne quittent jamais votre poste.**
 
 Conçu pour les professionnels européens — avocats, médecins, notaires, DPO, cabinets de conseil — soumis au **RGPD** et à l'**AI Act** (Règlement IA européen, 2024/1689).
 
@@ -26,29 +26,40 @@ Conçu pour les professionnels européens — avocats, médecins, notaires, DPO,
 | **DPO & RSSI** | Toute PII avant envoi vers un LLM hors UE, avec journal d'audit complet |
 | **Cabinets de conseil** | Données clients, secrets industriels, informations contractuelles |
 
-Le principe est simple : **les LLM ne voient que des jetons opaques**. Vous gardez la maîtrise, vos clients gardent leur confidentialité, et vous restez conformes.
+Le principe est simple : **les LLM ne voient que des jetons opaques**. Vous gardez la maîtrise, vos clients gardent leur confidentialité, et vous restez conforme.
+
+---
+
+## Deux portes d'entrée
+
+| Vous êtes… | Utilisez |
+|---|---|
+| Développeur — vous intégrez l'anonymisation dans un agent, un pipeline RAG, une API | **Le paquet Python `piighost`** — [Démarrage Python](#démarrage-python) |
+| Professionnel du droit, notariat, santé — vous voulez un Claude Desktop sûr, sans écrire de code | **Le plugin Cowork `hacienda`** — [Plugin Cowork](#plugin-cowork-hacienda) |
+
+Les deux voies partagent le même moteur (`piighost`). Le plugin `hacienda` est une surface sans code — il enveloppe le serveur MCP de `piighost` avec des commandes en langage naturel adaptées au secret professionnel.
 
 ---
 
 ## Table des matières
 
 - [Pour qui ?](#pour-qui-)
+- [Deux portes d'entrée](#deux-portes-dentrée)
 - [En une minute](#en-une-minute)
-- [Démarrage rapide](#démarrage-rapide)
+- [Démarrage Python](#démarrage-python)
+- [Plugin Cowork `hacienda`](#plugin-cowork-hacienda)
 - [Fonctionnalités](#fonctionnalités)
 - [Comment ça marche ?](#comment-ça-marche-)
 - [Installation](#installation)
   - [Installation Python (uv)](#installation-python-uv)
-  - [Installation Claude Desktop](#installation-claude-desktop)
+  - [Installation Claude Desktop (MCP)](#installation-claude-desktop-mcp)
   - [Installation Docker](#installation-docker)
-  - [Installation automatique par Claude](#installation-automatique-par-claude)
 - [Isolation par projet](#isolation-par-projet)
 - [Utilisation](#utilisation)
 - [Intégrations](#intégrations)
 - [Conformité RGPD & AI Act](#conformité-rgpd--ai-act)
 - [Architecture](#architecture)
 - [Développement](#développement)
-- [Écosystème](#écosystème)
 - [Licence & support](#licence--support)
 
 ---
@@ -58,17 +69,14 @@ Le principe est simple : **les LLM ne voient que des jetons opaques**. Vous gard
 ```python
 from piighost.service.core import PIIGhostService
 
-svc = await PIIGhostService.create(vault_dir="~/hacienda-vault")
+svc = await PIIGhostService.create(vault_dir="~/.piighost")
 
-# Vos données sensibles entrent ici
 anon = await svc.anonymize(
     "M. Jean Dupont habite au 12 rue de Rivoli, téléphone 06 12 34 56 78.",
     project="client-dupont",
 )
-# → Seuls des jetons opaques partent vers le LLM
-#   "<PERSON:a3f8…> habite au <ADDRESS:b7e1…>, téléphone <PHONE:c4d2…>."
+# → "<PERSON:a3f8…> habite au <ADDRESS:b7e1…>, téléphone <PHONE:c4d2…>."
 
-# Le LLM répond avec les jetons ; vous réhydratez localement
 rehydrated = await svc.rehydrate(reponse_llm, project="client-dupont")
 # → "M. Jean Dupont habite au 12 rue de Rivoli, …"
 ```
@@ -77,18 +85,16 @@ rehydrated = await svc.rehydrate(reponse_llm, project="client-dupont")
 
 1. **Aucune PII ne part** — les LLM OpenAI, Anthropic, Mistral, Ollama ne voient que des hachés déterministes.
 2. **Isolation par projet** — chaque dossier client a son propre coffre-fort chiffré, sa propre clé, son propre index.
-3. **Audit complet** — chaque anonymisation et chaque révélation est journalisée, horodatée, en append-only, sur votre disque.
+3. **Audit complet** — chaque anonymisation et chaque révélation est journalisée, horodatée, append-only, sur votre disque.
 
 ---
 
-## Démarrage rapide
+## Démarrage Python
 
-Choisissez le chemin qui correspond à votre usage.
-
-### 🏃 En 30 secondes — Python pur
+### En 30 secondes — anonymisation pure
 
 ```bash
-uv add piighost
+uv add "piighost[gliner2]"
 ```
 
 ```python
@@ -118,7 +124,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### 💬 Avec un agent LangChain
+### Avec un agent LangChain
 
 Un middleware transparent : le LLM ne voit que les jetons, vos outils reçoivent les vraies valeurs.
 
@@ -150,23 +156,49 @@ agent = create_agent(
 )
 ```
 
-### 🖥️ Dans Claude Desktop (MCPB)
-
-1. Téléchargez `hacienda-ghost-full.mcpb` depuis la page [Releases](https://github.com/jamon8888/hacienda-ghost/releases/latest).
-2. Double-cliquez ; Claude Desktop installe automatiquement.
-3. Choisissez un répertoire de coffre-fort.
-4. Redémarrez Claude — les outils `anonymize_text`, `query`, `vault_search` apparaissent.
-
-### 🐳 En Docker
+### Avec un service complet (multi-projet + RAG)
 
 ```bash
-git clone https://github.com/jamon8888/hacienda-ghost
-cd hacienda-ghost
-make install   # génère clé de coffre, paire age, .env
-make up        # démarre la pile « poste de travail »
+uv add "piighost[all]"
 ```
 
-Claude Desktop se connecte à `http://127.0.0.1:8765`. Aucun port n'est exposé à l'extérieur.
+```python
+from piighost.service.core import PIIGhostService
+from piighost.service.config import ServiceConfig
+
+svc = await PIIGhostService.create(
+    vault_dir="~/.piighost",
+    config=ServiceConfig(),
+)
+
+# Anonymiser, indexer, interroger — tout dans un projet isolé
+await svc.create_project("client-dupont", description="Contentieux M. Dupont")
+await svc.index_path("~/docs/client-dupont/", project="client-dupont")
+result = await svc.query("Quelle est la date du procès-verbal ?", project="client-dupont")
+```
+
+---
+
+## Plugin Cowork `hacienda`
+
+Pour les professionnels qui veulent un Claude Desktop safe-by-default sans écrire de code, le dépôt fournit un plugin Cowork sous [`plugin/`](plugin/README.md) — nom de code **hacienda**.
+
+```
+claude plugins add jamon8888/hacienda
+```
+
+Ouvrez ensuite un dossier client dans Cowork (glisser-déposer ou **File → Open Folder**) ; le plugin indexe automatiquement le dossier et expose les commandes :
+
+| Commande | Rôle |
+|---|---|
+| `/index` | (Ré-)indexer le dossier actif |
+| `/ask` | Question sur le dossier, réponse avec citations (PII anonymisée à la sortie) |
+| `/status` | État de l'index et du coffre-fort |
+| `/audit` | Rapport de la session courante (anonymisations, révélations) |
+| `/redact-outbound` | Règles pour préserver les jetons dans les brouillons sortants |
+| `/knowledge-base` | Navigation documentaire dans le dossier actif |
+
+Le plugin **n'ajoute aucun code exécutable** : il se contente de déclarer le serveur MCP `piighost` et des skills en prose. Voir [`plugin/README.md`](plugin/README.md) pour les limites connues (pas de hook `PreToolUse` en Cowork v1, un dossier actif à la fois) et les contrats de support payant.
 
 ---
 
@@ -179,7 +211,7 @@ Claude Desktop se connecte à `http://127.0.0.1:8765`. Aucun port n'est exposé 
 - **Liaison d'entités** — relie les mentions d'une même personne même avec fautes de frappe ou variantes (« M. Dupont » = « Jean Dupont » = « Jean D. »).
 - **Jetons déterministes** — chaque entité devient un jeton opaque stable (`<PERSON:a3f8…>`) qui survit aux passages multiples dans le LLM.
 - **Réhydratation fidèle** — restaure les valeurs originales même si le LLM cite partiellement le jeton.
-- **Coffre-fort chiffré AES-256-GCM** — les valeurs originales sont chiffrées au repos, jamais exposées dans les logs ni les erreurs. Clé jamais persistée en clair.
+- **Coffre-fort chiffré AES-256-GCM** — les valeurs originales sont chiffrées au repos, jamais exposées dans les logs ni les erreurs.
 - **Invariant fail-closed** — si l'anonymisation échoue à mi-chemin, aucun texte partiel n'est renvoyé : l'opération échoue en entier.
 
 ### 📚 Indexation & recherche (RAG)
@@ -189,16 +221,17 @@ Claude Desktop se connecte à `http://127.0.0.1:8765`. Aucun port n'est exposé 
 - **Reranking** — modèle cross-encoder (`BAAI/bge-reranker-base`) pour réordonner les résultats selon la pertinence fine.
 - **Filtres de requête** — restreignez à un préfixe de chemin ou à une liste d'ID de documents (`QueryFilter(file_path_prefix=…)`).
 - **Streaming sûr** — la réhydratation en flux utilise un buffer à fenêtre glissante qui empêche toute fuite de jetons partiels vers l'utilisateur (ex. : `<PERSON:a3` coupé au milieu).
-- **Cache de réponses** — requêtes identiques servies instantanément sans ré-invoquer le LLM (backend **aiocache**, TTL configurable). Le cache est cloisonné par projet.
+- **Cache de réponses** — requêtes identiques servies instantanément via **aiocache**. Le cache est cloisonné par projet.
 
 ### 🔌 Intégrations
 
 - **LangChain** — `PIIAnonymizationMiddleware`, retrievers hybrides, pipeline `PIIGhostRAG` clé-en-main.
 - **Haystack** — composants pipeline compatibles, `CachedRagPipeline`, `streaming_callback` sûr.
-- **MCP (Model Context Protocol)** — serveur prêt pour Claude Desktop, via bundle `.mcpb` ou configuration manuelle.
-- **CLI `piighost`** — ingestion, requête, gestion du coffre-fort, export portabilité.
-- **Démon local** — serveur JSON-RPC pour intégration avec d'autres applications desktop.
-- **REST API** — via [piighost-api](https://github.com/Athroniaeth/piighost-api) (paquet séparé).
+- **MCP (Model Context Protocol)** — serveur `piighost serve` pour Claude Desktop, Cowork, ou tout client MCP (stdio ou SSE).
+- **Plugin Cowork `hacienda`** — installation sans code, skills en prose, voir [`plugin/`](plugin/).
+- **CLI `piighost`** — ingestion, requête, gestion du coffre-fort, gestion Docker.
+- **Démon local** — serveur JSON-RPC (`piighost daemon`) pour intégration avec d'autres applications desktop.
+- **REST API** — via [piighost-api](https://github.com/Athroniaeth/piighost-api) (paquet séparé, optionnel).
 
 ### 🛡️ Souveraineté & conformité
 
@@ -222,7 +255,6 @@ title: "Flux AnonymizationPipeline.anonymize()"
 ---
 flowchart LR
     classDef stage fill:#90CAF9,stroke:#1565C0,color:#000
-    classDef protocol fill:#FFF9C4,stroke:#F9A825,color:#000
     classDef data fill:#A5D6A7,stroke:#2E7D32,color:#000
 
     INPUT(["`**Texte d'entrée**
@@ -302,49 +334,66 @@ Gestion de dépendances via [uv](https://docs.astral.sh/uv/).
 # Dépendances minimales — anonymisation seule
 uv add piighost
 
-# Avec le détecteur NER multilingue
+# Avec le détecteur NER multilingue (recommandé)
 uv add "piighost[gliner2]"
 
 # Avec indexation documentaire + RAG
-uv add "piighost[index,langchain,haystack]"
+uv add "piighost[index,langchain]"
 
-# Tout (client, MCP, embeddings locaux, transformers)
+# Avec le serveur MCP pour Claude Desktop
+uv add "piighost[mcp]"
+
+# Tout (GLiNER2, LangChain, Haystack, embeddings locaux, MCP, …)
 uv add "piighost[all]"
 ```
 
-**Installation depuis les sources pour développement :**
+**Installation depuis les sources (développement) :**
 
 ```bash
 git clone https://github.com/Athroniaeth/piighost.git
 cd piighost
 uv sync --all-extras
 make lint        # format + lint + type-check
-uv run pytest    # lance la suite complète
+uv run pytest    # suite complète
 ```
 
-### Installation Claude Desktop
+**Initialiser un coffre-fort dans le dossier courant :**
 
-#### Méthode 1 — Bundle MCPB (recommandée)
+```bash
+cd ~/dossiers-clients
+piighost init     # crée ./.piighost/ avec config + vaults/ + audit.log
+```
+
+### Installation Claude Desktop (MCP)
+
+Trois méthodes, de la plus simple à la plus contrôlée.
+
+#### Méthode 1 — Plugin Cowork (recommandée pour les professionnels)
+
+Voir [Plugin Cowork `hacienda`](#plugin-cowork-hacienda) ci-dessus.
+
+#### Méthode 2 — Bundle MCPB (Claude Desktop natif)
 
 1. Téléchargez le bundle depuis la page [Releases](https://github.com/jamon8888/hacienda-ghost/releases/latest) :
-   - **`hacienda-ghost-core.mcpb`** — anonymisation + coffre-fort seuls (~50 Mo)
-   - **`hacienda-ghost-full.mcpb`** — avec indexation documentaire + RAG (~1,5 Go, dépendances lourdes : torch, sentence-transformers)
+   - **`piighost-core.mcpb`** — anonymisation + coffre-fort seuls (~50 Mo)
+   - **`piighost-full.mcpb`** — avec indexation documentaire + RAG (~1,5 Go, dépendances : torch, sentence-transformers)
 2. **Double-cliquez** sur le fichier `.mcpb`. Claude Desktop ouvre la fenêtre d'installation.
 3. Confirmez et choisissez un **répertoire de coffre-fort** (par exemple `~/Documents/hacienda-vault`).
 4. Redémarrez Claude Desktop. Les outils suivants apparaissent dans le menu MCP :
 
-| Outil | Usage |
+| Outil MCP | Usage |
 |---|---|
 | `anonymize_text` | Anonymiser un texte avant envoi au LLM |
 | `rehydrate_text` | Restaurer les valeurs originales dans une réponse |
 | `index_path` | Indexer un dossier (PDF, DOCX, …) |
-| `query` | Interroger les documents indexés (RAG) |
-| `vault_search` / `vault_show` | Chercher et révéler des jetons (avec audit) |
-| `list_projects` / `create_project` / `delete_project` | Gérer les projets (dossiers clients) |
+| `query` | Interroger les documents indexés (RAG hybride + reranking) |
+| `vault_search`, `vault_list`, `vault_get`, `vault_stats` | Inspecter le coffre-fort (avec audit) |
+| `list_projects`, `create_project`, `delete_project` | Gérer les projets (dossiers clients) |
+| `daemon_status`, `daemon_stop` | Contrôler le démon local |
 
 Au premier appel, `uv` installe automatiquement les dépendances Python (quelques minutes la première fois, instantané ensuite).
 
-#### Méthode 2 — Configuration manuelle
+#### Méthode 3 — Configuration manuelle de Claude Desktop
 
 Éditez votre fichier `claude_desktop_config.json` :
 
@@ -357,49 +406,30 @@ Ajoutez la section `mcpServers` :
 ```json
 {
   "mcpServers": {
-    "hacienda-ghost": {
+    "piighost": {
       "command": "uvx",
       "args": [
-        "--from", "piighost[mcp]",
-        "piighost-mcp",
-        "--vault-dir", "/chemin/vers/votre/vault"
+        "--from", "piighost[all]",
+        "piighost", "serve",
+        "--vault", "/chemin/vers/votre/.piighost",
+        "--transport", "stdio"
       ],
       "env": {
-        "PIIGHOST_DETECTOR": "gliner2",
-        "PIIGHOST_EMBEDDER": "multilingual-e5",
-        "CLOAKPIPE_VAULT_KEY": "<clé-générée-par-piighost-init>"
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8"
       }
     }
   }
 }
 ```
 
+Les variables `PYTHONUTF8` et `PYTHONIOENCODING` garantissent le bon fonctionnement sur Windows (cp1252 sinon). Le serveur isole automatiquement stdout des bibliothèques tierces pour préserver le canal JSON-RPC.
+
 Redémarrez Claude Desktop.
-
-#### Méthode 3 — Plugin Cowork `hacienda`
-
-Pour les professionnels qui travaillent dossier par dossier dans **Claude Cowork**, le dépôt fournit un plugin prêt-à-l'emploi sous [`plugin/`](plugin/README.md) — nom de code **hacienda**. Il enveloppe le serveur MCP `piighost` avec des *skills* en langage naturel dédiées au secret professionnel (avocats, notaires, experts-comptables, médecins, CGP/CIF).
-
-```bash
-claude plugins add jamon8888/hacienda
-```
-
-Ouvrez ensuite un dossier client dans Cowork (glisser-déposer ou **File → Open Folder**) : le plugin indexe automatiquement le dossier et expose les commandes :
-
-| Commande | Rôle |
-|---|---|
-| `/index` | (Ré-)indexer le dossier actif |
-| `/ask` | Question sur le dossier, réponse avec citations (PII anonymisée à la sortie) |
-| `/status` | État de l'index et du coffre-fort |
-| `/audit` | Rapport de la session courante (anonymisations, révélations) |
-| `/redact-outbound` | Force l'anonymisation des brouillons sortants (emails, Slack…) |
-| `/knowledge-base` | Navigation documentaire dans le dossier |
-
-Contrairement aux bundles MCPB, le plugin Cowork **n'ajoute aucun code exécutable** : il se contente de déclarer un serveur MCP (`piighost`) et des skills en prose. Voir [`plugin/README.md`](plugin/README.md) pour la liste complète, les limites connues (pas de hook `PreToolUse` côté Cowork v1, un dossier actif à la fois) et les contrats de support payant.
 
 ### Installation Docker
 
-Pour les cabinets qui préfèrent une installation isolée, reproductible, et séparée de leur environnement Python local, Hacienda Ghost fournit une pile Docker complète avec **images signées cosign**, **sauvegardes chiffrées**, et **mises à jour vérifiées**.
+Pour les cabinets qui préfèrent une installation isolée, reproductible, et séparée de leur environnement Python local, le dépôt fournit une pile Docker complète avec **images signées cosign**, **sauvegardes chiffrées**, et **mises à jour vérifiées**.
 
 #### Prérequis
 
@@ -463,14 +493,14 @@ docker compose --profile server \
 make up-sovereign
 ```
 
-Le réseau `piighost-llm` est marqué `internal: true` — Ollama ne peut communiquer qu'avec Hacienda Ghost, jamais avec Internet.
+Le réseau `piighost-llm` est marqué `internal: true` — Ollama ne peut communiquer qu'avec `piighost`, jamais avec Internet.
 
 #### Sauvegardes chiffrées
 
 Une sauvegarde quotidienne chiffrée avec **age** est activée par défaut (02:30 locale). Archives dans `./backups/` au format `piighost-AAAA-MM-JJ.tar.age`, rétention **7 jours + 4 semaines**.
 
 ```bash
-make backup                                              # sauvegarde immédiate
+make backup                                                # sauvegarde immédiate
 make restore BACKUP=./backups/piighost-2026-04-20.tar.age  # restauration
 ```
 
@@ -487,7 +517,8 @@ COMPOSE_PROFILES=workstation,no-backup make up
 Les images sont épinglées par **digest SHA-256** dans `docker-compose.yml`, jamais par tag mutable.
 
 ```bash
-piighost self-update        # ou : make update
+piighost self-update              # par défaut : tag slim
+piighost self-update --tag full   # variante lourde
 docker compose pull
 docker compose up -d
 ```
@@ -540,35 +571,6 @@ Logs détaillés : `docker compose logs -f piighost-mcp piighost-daemon`
 
 Remise à zéro (⚠ destructive — supprime toutes les données) : `make clean`
 
-### Installation automatique par Claude
-
-Vous pouvez laisser Claude installer Hacienda Ghost à votre place. Copiez-collez simplement ce prompt dans Claude Desktop :
-
-> ````
-> Installe Hacienda Ghost localement et configure-le dans Claude Desktop :
->
-> 1. Vérifie que `uv` est installé (https://docs.astral.sh/uv/) ; sinon installe-le
->    avec la commande officielle pour mon OS.
-> 2. Crée `~/Documents/hacienda-vault` s'il n'existe pas.
-> 3. Installe le paquet : `uv tool install "piighost[mcp]"`.
-> 4. Initialise le coffre-fort : `piighost --init --vault-dir ~/Documents/hacienda-vault`.
->    Note la clé `CLOAKPIPE_VAULT_KEY` générée et conserve-la dans mon gestionnaire
->    de mots de passe.
-> 5. Ouvre `claude_desktop_config.json` (emplacement selon l'OS).
-> 6. Ajoute la section `mcpServers.hacienda-ghost` en préservant les autres
->    serveurs MCP existants. La commande doit pointer vers `uvx`, utiliser
->    `--from piighost[mcp] piighost-mcp --vault-dir <chemin>`, et exporter
->    `CLOAKPIPE_VAULT_KEY` depuis l'étape 4.
-> 7. Crée un projet démo : `piighost project create demo`.
-> 8. Résume-moi : chemin du coffre, nom du projet, emplacement du config, et
->    instructions de redémarrage.
->
-> Ne modifie AUCUN autre fichier système. N'envoie AUCUNE donnée à l'extérieur.
-> Demande-moi confirmation à chaque étape critique.
-> ````
-
-Claude suivra les étapes via ses outils Bash et FileSystem en demandant confirmation aux moments clés.
-
 ---
 
 ## Isolation par projet
@@ -578,16 +580,17 @@ Hacienda Ghost isole strictement les données par **projet** — une unité logi
 ### Structure sur disque
 
 ```
-~/.hacienda-ghost/
-├── vaults/
+.piighost/
+├── config.toml                   # Configuration locale
+├── projects/
 │   ├── client-dupont/            # Projet 1 — totalement isolé
-│   │   ├── vault.db              # Coffre-fort chiffré (clé propre)
-│   │   ├── index.lance/          # Index vectoriel
-│   │   └── bm25/                 # Index mots-clés
+│   │   ├── vault.db              # Coffre-fort chiffré
+│   │   ├── lance/                # Index vectoriel
+│   │   └── bm25.pkl              # Index mots-clés
 │   ├── dossier-medical-smith/    # Projet 2 — aucune visibilité sur projet 1
 │   │   ├── vault.db
-│   │   ├── index.lance/
-│   │   └── bm25/
+│   │   ├── lance/
+│   │   └── bm25.pkl
 │   └── default/                  # Projet par défaut
 └── audit.log                     # Journal d'audit global (append-only)
 ```
@@ -598,16 +601,16 @@ Hacienda Ghost isole strictement les données par **projet** — une unité logi
 - **Jetons non portables** — `<PERSON:a3f8…>` du projet A n'a aucune signification dans le projet B. Impossible de mélanger les contextes par erreur.
 - **Recherche cloisonnée** — `svc.query(…, project="client-dupont")` ne retournera jamais un chunk d'un autre projet.
 - **Cache RAG cloisonné** — la clé de cache inclut l'ID projet ; deux projets produisent deux entrées distinctes même pour une même question.
-- **Suppression atomique** — `piighost project delete client-dupont` efface intégralement (index, coffre, cache) en une opération.
+- **Suppression atomique** — `piighost projects delete client-dupont` efface intégralement (index, coffre, cache) en une opération.
 
-### Commandes
+### Commandes CLI
 
 ```bash
 # Créer un projet
-piighost project create client-dupont --description "Contentieux M. Dupont"
+piighost projects create client-dupont --description "Contentieux M. Dupont"
 
 # Lister
-piighost project list
+piighost projects list
 
 # Indexer dans un projet spécifique
 piighost index ~/docs/client-dupont --project client-dupont
@@ -615,15 +618,15 @@ piighost index ~/docs/client-dupont --project client-dupont
 # Requêter
 piighost query "Qui est le défendeur ?" --project client-dupont
 
-# Supprimer (refuse par défaut si non vide)
-piighost project delete client-dupont --force
+# Supprimer (refuse par défaut si non vide — ajouter --force)
+piighost projects delete client-dupont --force
 ```
 
 ---
 
 ## Utilisation
 
-### Anonymiser une conversation
+### Anonymiser / réhydrater
 
 ```python
 import asyncio
@@ -631,8 +634,10 @@ from piighost.service.core import PIIGhostService
 from piighost.service.config import ServiceConfig
 
 async def main():
-    cfg = ServiceConfig()
-    svc = await PIIGhostService.create(vault_dir="~/hacienda-vault", config=cfg)
+    svc = await PIIGhostService.create(
+        vault_dir="~/.piighost",
+        config=ServiceConfig(),
+    )
 
     anon = await svc.anonymize(
         "M. Jean Dupont habite au 12 rue de Rivoli à Paris.",
@@ -691,9 +696,15 @@ piighost vault list --project client-dupont
 
 # Afficher la valeur originale (inscrit dans l'audit)
 piighost vault show <PERSON:a3f8...> --project client-dupont --reveal
+
+# Chercher par valeur d'origine
+piighost vault search "Dupont" --project client-dupont
+
+# Statistiques du coffre
+piighost vault stats --project client-dupont
 ```
 
-Chaque révélation est **journalisée** dans `audit.log` avec horodatage, utilisateur, et raison si fournie (`--reason "export expertise judiciaire"`).
+Chaque révélation est **journalisée** dans `audit.log` avec horodatage et raison si fournie.
 
 ---
 
@@ -706,7 +717,7 @@ from piighost.middleware import PIIAnonymizationMiddleware
 from piighost.integrations.langchain.rag import PIIGhostRAG
 ```
 
-- `PIIAnonymizationMiddleware` — middleware de agent `create_agent`
+- `PIIAnonymizationMiddleware` — middleware pour `create_agent`
 - `PIIGhostRAG` — pipeline RAG clé-en-main (anonymisation + index + reranking + cache)
 - Retrievers compatibles `BaseRetriever` pour composition libre
 
@@ -721,20 +732,56 @@ from piighost.integrations.haystack.rag import CachedRagPipeline
 
 ### Model Context Protocol (MCP)
 
-- Serveur `piighost-mcp` avec transport `stdio` (Claude Desktop) ou `sse` (autres clients MCP)
-- Outils exposés : `anonymize_text`, `rehydrate_text`, `index_path`, `query`, `vault_*`, `list_projects`, etc.
+Le serveur MCP est lancé via la CLI :
+
+```bash
+piighost serve --vault ~/.piighost --transport stdio   # pour Claude Desktop
+piighost serve --vault ~/.piighost --transport sse     # pour clients HTTP/SSE
+```
+
+Outils exposés : `anonymize_text`, `rehydrate_text`, `index_path`, `query`, `vault_*`, `list_projects`, `create_project`, `delete_project`, `daemon_status`, `daemon_stop`.
+
+Le serveur isole automatiquement stdout des bibliothèques tierces (bannière FastMCP, warnings HuggingFace, GLiNER) pour garantir l'intégrité du flux JSON-RPC — essentiel sur Windows (cp1252) et pour les bibliothèques verbeuses.
 
 ### CLI
 
 ```bash
 piighost --help
 
-piighost project create <nom>           # créer un projet
-piighost index <chemin> --project <nom> # indexer
+# Initialisation
+piighost init                                   # crée ./.piighost/ dans le dossier courant
+
+# Anonymisation / réhydratation
+piighost anonymize <fichier>                    # ou « - » pour stdin
+piighost rehydrate <fichier>
+piighost detect <fichier>
+
+# Indexation / recherche
+piighost index <dossier> --project <nom>
 piighost query "<question>" --project <nom>
+piighost index-status --project <nom>
+
+# Coffre-fort
 piighost vault list --project <nom>
-piighost docker init                     # génère secrets Docker
-piighost self-update                     # met à jour les digests cosign-vérifiés
+piighost vault show <token> --project <nom> --reveal
+piighost vault search "<valeur>" --project <nom>
+piighost vault stats --project <nom>
+
+# Projets
+piighost projects create <nom> [--description <texte>]
+piighost projects list
+piighost projects delete <nom> [--force]
+
+# Serveur MCP
+piighost serve --vault <dossier> --transport stdio|sse
+
+# Démon local
+piighost daemon start|stop|status
+
+# Docker
+piighost docker init                            # génère secrets + .env
+piighost docker status
+piighost self-update [--tag slim|full]          # met à jour les digests cosign-vérifiés
 ```
 
 ---
@@ -750,7 +797,7 @@ Hacienda Ghost est conçu **par défaut** pour la conformité RGPD.
 | **Art. 5(1)(b) — Limitation des finalités** | Les données PII sont traitées uniquement pour l'anonymisation locale. Aucune transmission à des tiers. |
 | **Art. 5(1)(c) — Minimisation** | Seuls les jetons opaques partent vers le LLM. Les valeurs originales restent dans votre coffre-fort local. |
 | **Art. 5(1)(f) — Intégrité & confidentialité** | Coffre-fort chiffré AES-256-GCM, clé dérivée par utilisateur, stockée hors du projet. |
-| **Art. 17 — Droit à l'effacement** | `piighost vault delete` pour un jeton ; `piighost project delete` pour un dossier complet. |
+| **Art. 17 — Droit à l'effacement** | `piighost projects delete` pour un dossier complet ; suppression d'un jeton individuel via le service. |
 | **Art. 20 — Portabilité** | Export JSON des documents indexés, jetons et métadonnées. |
 | **Art. 25 — Privacy by design** | Aucune PII n'est jamais loggée. Les erreurs sont expurgées. Invariants vérifiés à chaque test. |
 | **Art. 30 — Registre des traitements** | Journal d'audit local (append-only) de chaque anonymisation et révélation. |
@@ -777,22 +824,23 @@ L'AI Act entre en application progressivement jusqu'en 2026. Hacienda Ghost faci
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Utilisateur / Claude Desktop / Agent LangChain / Haystack   │
+│  Utilisateur / Claude Desktop / Cowork / Agent LangChain /   │
+│  Haystack / API REST / CLI                                   │
 └────────────────────────┬─────────────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────────────┐
-│  MCP Server (hacienda-ghost)                                 │
+│  MCP Server (piighost serve)                                 │
 │    Outils : anonymize_text, rehydrate_text, query, vault_*   │
 └────────────────────────┬─────────────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────────────┐
-│  PIIGhostService  —  multiplexeur multi-projet                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
-│  │ Projet A     │  │ Projet B     │  │ Projet C     │         │
-│  │ Vault AES    │  │ Vault AES    │  │ Vault AES    │         │
-│  │ Index LanceDB│  │ Index LanceDB│  │ Index LanceDB│         │
-│  │ BM25         │  │ BM25         │  │ BM25         │         │
-│  └──────────────┘  └──────────────┘  └──────────────┘         │
+│  PIIGhostService  —  multiplexeur multi-projet               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
+│  │ Projet A     │  │ Projet B     │  │ Projet C     │        │
+│  │ Vault AES    │  │ Vault AES    │  │ Vault AES    │        │
+│  │ Index LanceDB│  │ Index LanceDB│  │ Index LanceDB│        │
+│  │ BM25         │  │ BM25         │  │ BM25         │        │
+│  └──────────────┘  └──────────────┘  └──────────────┘        │
 └────────────────────────┬─────────────────────────────────────┘
                          │  (jetons opaques uniquement)
 ┌────────────────────────▼─────────────────────────────────────┐
@@ -813,7 +861,7 @@ uv sync --all-extras
 
 # Qualité code
 make lint                            # format (ruff) + lint (ruff) + type (pyrefly)
-uv run pytest                        # suite complète (~800 tests)
+uv run pytest                        # suite complète
 uv run pytest -k test_anonymize      # un test
 uv run pytest tests/e2e/             # E2E (RAG complet)
 
@@ -837,22 +885,17 @@ make down && make clean              # arrêt + purge
 make lint && uv run pytest --no-cov -q
 ```
 
-Le hook pre-push exécute automatiquement la suite complète avant de pousser sur le remote `jamon`.
-
----
-
 ### Notes complémentaires
 
-- Le modèle GLiNER2 est téléchargé depuis HuggingFace au premier usage (~500 Mo).
+- Le modèle GLiNER2 est téléchargé depuis HuggingFace au premier usage (~600 Mo).
 - Tous les modèles de données sont des dataclasses figées, sûres à partager entre threads.
-- Les tests CI utilisent `ExactMatchDetector` pour éviter de charger le vrai modèle GLiNER2.
+- Les tests CI utilisent `ExactMatchDetector` pour éviter de charger le vrai modèle GLiNER2. En production, `PIIGHOST_DETECTOR=stub` et `PIIGHOST_EMBEDDER=stub` forcent des backends déterministes pour les tests d'intégration.
 
 ---
 
 ## Licence & support
 
 **Licence** : [MIT](LICENSE) — utilisation libre, y compris commerciale.
-
 
 **Issues** : [GitHub Issues (jamon8888)](https://github.com/jamon8888/hacienda-ghost/issues)
 
