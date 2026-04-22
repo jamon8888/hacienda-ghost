@@ -103,6 +103,7 @@ class ExactEntityLinker(BaseEntityLinker):
     """
 
     _flags: re.RegexFlag
+    _pattern_cache: dict[str, re.Pattern]
 
     def __init__(
         self,
@@ -111,6 +112,7 @@ class ExactEntityLinker(BaseEntityLinker):
     ) -> None:
         super().__init__(min_text_length=min_text_length)
         self._flags = flags
+        self._pattern_cache: dict[str, re.Pattern] = {}
 
     def link(self, text: str, detections: list[Detection]) -> list[Entity]:
         """Expand detections and group them into entities.
@@ -240,6 +242,9 @@ class ExactEntityLinker(BaseEntityLinker):
     def _find_all(self, text: str, fragment: str) -> list[tuple[int, int]]:
         """Find all word-boundary occurrences of a fragment in the text.
 
+        Compiled patterns are cached by fragment text so each unique
+        entity string is only compiled once per linker instance.
+
         Args:
             text: The source text to search.
             fragment: The substring to look for.
@@ -247,4 +252,22 @@ class ExactEntityLinker(BaseEntityLinker):
         Returns:
             A list of ``(start, end)`` tuples for every match.
         """
-        return find_all_word_boundary(text, fragment, self._flags)
+        if fragment not in self._pattern_cache:
+            escaped = re.escape(fragment)
+            prefix = (
+                r"\b"
+                if fragment[0:1].isalnum() or fragment[0:1] == "_"
+                else r"(?<!\w)"
+            )
+            suffix = (
+                r"\b"
+                if fragment[-1:].isalnum() or fragment[-1:] == "_"
+                else r"(?!\w)"
+            )
+            self._pattern_cache[fragment] = re.compile(
+                f"{prefix}{escaped}{suffix}", self._flags
+            )
+        return [
+            (m.start(), m.end())
+            for m in self._pattern_cache[fragment].finditer(text)
+        ]
