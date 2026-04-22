@@ -36,6 +36,9 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = []
 
+[project.scripts]
+piighost = "piighost.cli.main:app"
+
 [project.urls]
 Homepage = "https://github.com/Athroniaeth/piighost"
 Documentation = "https://github.com/Athroniaeth/piighost#readme"
@@ -72,8 +75,16 @@ transformers = [
 llm = [
     "langchain-core>=0.3",
 ]
+mcp = [
+    "fastmcp>=3.0",
+    "mcp>=1.0",
+    "typer>=0.9",
+]
+index = [
+    "sentence-transformers>=3.0",
+]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index]",
 ]
 
 [build-system]
