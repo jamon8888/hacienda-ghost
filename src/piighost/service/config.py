@@ -42,7 +42,11 @@ class DetectorSection(BaseModel):
 
 
 class EmbedderSection(BaseModel):
-    backend: Literal["local", "mistral", "none"] = "none"
+    # Default to "local" so a fresh install has working vector search out of the
+    # box. "none" disables vectors entirely (search returns 0 results) and was
+    # a footgun for new users. Override in config.toml if you explicitly want
+    # BM25-only indexing.
+    backend: Literal["local", "mistral", "none"] = "local"
     local_model: str = "OrdalieTech/Solon-embeddings-base-0.1"
     mistral_model: str = "mistral-embed"
 

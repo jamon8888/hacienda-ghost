@@ -23,6 +23,19 @@ threshold = 0.5
 labels = ["PERSON", "LOC", "ORG", "EMAIL", "PHONE", "IBAN", "CREDIT_CARD", "ID"]
 
 [embedder]
+# "local" gives semantic vector search out of the box (downloads Solon ~1.1GB
+# from HuggingFace on first use). Set to "none" for BM25-only indexing.
+backend = "local"
+local_model = "OrdalieTech/Solon-embeddings-base-0.1"
+
+[index]
+store = "lancedb"
+chunk_size = 512
+chunk_overlap = 64
+bm25_weight = 0.4
+vector_weight = 0.6
+
+[reranker]
 backend = "none"
 
 [daemon]

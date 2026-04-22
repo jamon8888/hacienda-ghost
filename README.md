@@ -183,9 +183,27 @@ result = await svc.query("Quelle est la date du procès-verbal ?", project="clie
 
 Pour les professionnels qui veulent un Claude Desktop safe-by-default sans écrire de code, le dépôt fournit un plugin Cowork sous [`plugin/`](plugin/README.md) — nom de code **hacienda**.
 
+### Installation en une commande (Claude Code)
+
+```bash
+# 1. Ajouter le marketplace depuis le dépôt GitHub
+/plugin marketplace add jamon8888/hacienda-ghost
+
+# 2. Installer le plugin
+/plugin install hacienda@hacienda-ghost
 ```
-claude plugins add jamon8888/hacienda
-```
+
+Claude Code télécharge le plugin, enregistre automatiquement le serveur MCP `hacienda` (via `uvx` depuis git — pas d'install Python manuelle), et le premier `/index` télécharge les modèles GLiNER2 + Solon (~1.5 GB, une seule fois).
+
+### Prérequis
+
+- [`uv`](https://docs.astral.sh/uv/#installation) installé (`pipx install uv` ou `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- Python 3.11+ disponible pour `uv` (il peut l'installer tout seul)
+- Connexion internet lors du premier index (téléchargement modèles HuggingFace)
+
+Le vault vit par défaut dans `~/.hacienda/` — override avec la variable d'env `HACIENDA_DATA_DIR` si besoin.
+
+### Commandes
 
 Ouvrez ensuite un dossier client dans Cowork (glisser-déposer ou **File → Open Folder**) ; le plugin indexe automatiquement le dossier et expose les commandes :
 
