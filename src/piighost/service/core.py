@@ -207,67 +207,127 @@ class _ProjectService:
         ]
 
     async def index_path(
-        self, path: Path, *, recursive: bool = True, force: bool = False
+        self, path: Path, *, recursive: bool = True, force: bool = False,
+        cancel_token: "CancellationToken | None" = None,
     ) -> "IndexReport":
         import time as _time
 
         from piighost.indexer.chunker import chunk_text
-        from piighost.indexer.identity import content_hash
-        from piighost.indexer.ingestor import list_document_paths, extract_text
+        from piighost.indexer.identity import content_hash_full, file_fingerprint
+        from piighost.indexer.ingestor import extract_text, list_document_paths
+        from piighost.indexer.indexing_store import FileRecord, backfill_from_vault
+        from piighost.indexer.change_detector import ChangeDetector
         from piighost.service.models import IndexReport
 
+        # One-shot migration from legacy vault rows (idempotent after first call)
+        backfill_from_vault(self._indexing_store, self._vault, self._project_name)
+
         start = _time.monotonic()
-        paths = await list_document_paths(path, recursive=recursive)
-        indexed = 0
-        deleted = 0
-        skipped = 0
-        unchanged = 0
+        indexed = modified = deleted_count = skipped = unchanged = 0
         errors: list[str] = []
 
-        for p in paths:
-            try:
-                stat = p.stat()
-                p = p.resolve()
+        if force:
+            # full re-index — treat every file as new
+            paths = await list_document_paths(path, recursive=recursive)
+            targets = [(p.resolve(), "new") for p in paths]
+            unchanged_paths: list[Path] = []
+            deleted_paths: list[Path] = []
+        else:
+            detector = ChangeDetector(
+                store=self._indexing_store, project_id=self._project_name
+            )
+            cs = await detector.scan_async(path, recursive=recursive)
+            targets = (
+                [(p, "new") for p in cs.new]
+                + [(p, "modified") for p in cs.modified]
+            )
+            unchanged_paths = cs.unchanged
+            deleted_paths = cs.deleted
+
+        unchanged = len(unchanged_paths)
+
+        with self._indexing_store.batch():
+            # Handle deletions first
+            for p in deleted_paths:
+                self._indexing_store.mark_deleted(self._project_name, str(p))
                 existing = self._vault.get_indexed_file_by_path(str(p))
-                if not force and existing and abs(existing.mtime - stat.st_mtime) < 0.001:
-                    unchanged += 1
-                    continue
-
-                text = await extract_text(p)
-                if text is None:
-                    skipped += 1
-                    continue
-
-                doc_id = content_hash(p)
-
-                if existing:
+                if existing is not None:
                     self._chunk_store.delete_doc(existing.doc_id)
-                    deleted += 1
-                    if existing.doc_id != doc_id:
-                        self._vault.delete_doc_entities(existing.doc_id)
-                        self._vault.delete_indexed_file(existing.doc_id)
+                    self._vault.delete_doc_entities(existing.doc_id)
+                    self._vault.delete_indexed_file(existing.doc_id)
+                deleted_count += 1
 
-                result = await self.anonymize(text, doc_id=doc_id)
-                anon_text = result.anonymized
-                chunks = chunk_text(anon_text)
-                if not chunks:
-                    skipped += 1
-                    continue
+            # Process additions and modifications
+            for p, kind in targets:
+                if cancel_token is not None and cancel_token.is_cancelled:
+                    break
+                try:
+                    stat_mtime, stat_size = file_fingerprint(p)
+                    text = await extract_text(p)
+                    if text is None:
+                        skipped += 1
+                        continue
+                    chash_full = content_hash_full(p)
+                    doc_id = chash_full[:16]
 
-                vectors = await self._embedder.embed(chunks)
-                self._chunk_store.upsert_chunks(doc_id, str(p), chunks, vectors)
-                self._vault.upsert_indexed_file(
-                    doc_id=doc_id,
-                    file_path=str(p),
-                    content_hash=doc_id,
-                    mtime=stat.st_mtime,
-                    chunk_count=len(chunks),
-                )
-                indexed += 1
-            except Exception as exc:
-                errors.append(f"{p}: {type(exc).__name__}")
+                    # If replacing existing doc, clean up old vectors first
+                    existing = self._vault.get_indexed_file_by_path(str(p))
+                    if existing is not None:
+                        self._chunk_store.delete_doc(existing.doc_id)
+                        if existing.doc_id != doc_id:
+                            self._vault.delete_doc_entities(existing.doc_id)
+                            self._vault.delete_indexed_file(existing.doc_id)
 
-        if indexed > 0 or deleted > 0 or errors:
+                    result = await self.anonymize(text, doc_id=doc_id)
+                    chunks = chunk_text(result.anonymized)
+                    if not chunks:
+                        skipped += 1
+                        continue
+
+                    vectors = await self._embedder.embed(chunks)
+                    self._chunk_store.upsert_chunks(doc_id, str(p), chunks, vectors)
+                    self._vault.upsert_indexed_file(
+                        doc_id=doc_id, file_path=str(p),
+                        content_hash=doc_id, mtime=stat_mtime,
+                        chunk_count=len(chunks),
+                    )
+                    self._indexing_store.upsert(FileRecord(
+                        project_id=self._project_name,
+                        file_path=str(p),
+                        file_mtime=stat_mtime,
+                        file_size=stat_size,
+                        content_hash=chash_full,
+                        indexed_at=_time.time(),
+                        status="success",
+                        error_message=None,
+                        entity_count=len(result.entities),
+                        chunk_count=len(chunks),
+                    ))
+                    if kind == "modified":
+                        modified += 1
+                    else:
+                        indexed += 1
+                except Exception as exc:  # noqa: BLE001 — per-file isolation
+                    err_msg = f"{p.name}: {type(exc).__name__}"
+                    errors.append(err_msg)
+                    try:
+                        stat_mtime, stat_size = file_fingerprint(p)
+                    except OSError:
+                        stat_mtime, stat_size = 0.0, 0
+                    self._indexing_store.upsert(FileRecord(
+                        project_id=self._project_name,
+                        file_path=str(p),
+                        file_mtime=stat_mtime,
+                        file_size=stat_size,
+                        content_hash="",
+                        indexed_at=_time.time(),
+                        status="error",
+                        error_message=f"{type(exc).__name__}: {exc}",
+                        entity_count=None,
+                        chunk_count=None,
+                    ))
+
+        if indexed > 0 or modified > 0 or deleted_count > 0 or errors:
             all_records = self._chunk_store.all_records()
             if all_records:
                 self._bm25.rebuild(all_records)
@@ -277,6 +337,8 @@ class _ProjectService:
         duration_ms = int((_time.monotonic() - start) * 1000)
         return IndexReport(
             indexed=indexed,
+            modified=modified,
+            deleted=deleted_count,
             skipped=skipped,
             unchanged=unchanged,
             errors=errors,
@@ -529,7 +591,12 @@ class PIIGhostService:
         from piighost.service.project_path import derive_project_from_path
         resolved = project if project is not None else derive_project_from_path(path)
         svc = await self._get_project(resolved, auto_create=True)
-        report = await svc.index_path(path, recursive=recursive, force=force)
+        cancel_token = self._cancel_registry.get_or_create(resolved)
+        report = await svc.index_path(
+            path, recursive=recursive, force=force, cancel_token=cancel_token,
+        )
+        # Reset so next run starts fresh
+        self._cancel_registry.reset(resolved)
         return report.model_copy(update={"project": resolved})
 
     async def remove_doc(self, path: Path, *, project: str = "default") -> bool:
