@@ -34,7 +34,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "fastmcp>=3.2.4",
+    "portalocker>=3.2.0",
+    "psutil>=7.2.2",
+]
 
 [project.urls]
 Homepage = "https://github.com/Athroniaeth/piighost"
@@ -72,8 +76,13 @@ transformers = [
 llm = [
     "langchain-core>=0.3",
 ]
+index = [
+    "kreuzberg>=4.9.4",
+    "lancedb>=0.30.2",
+    "rank-bm25>=0.2.2",
+]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,index]",
 ]
 
 [build-system]
@@ -92,6 +101,9 @@ dev = [
     "zensical>=0.0.27",
     "commitizen>=4.13.9",
     "pytest-asyncio>=0.25",
+    "kreuzberg>=4.9.4",
+    "lancedb>=0.30.2",
+    "rank-bm25>=0.2.2",
 ]
 faker = [
     "faker>=40.11.0",
