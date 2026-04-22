@@ -192,3 +192,75 @@ class IndexingStore:
             raise
         else:
             self._conn.execute("COMMIT")
+
+
+def backfill_from_vault(
+    store: IndexingStore,
+    vault: object,
+    project_id: str,
+) -> int:
+    """One-shot migration: copy ``vault.indexed_files`` rows into ``store``.
+
+    Safe to call repeatedly — records a ``backfill_done`` flag in an
+    auxiliary ``indexing_kv`` table.  Returns the number of rows copied on
+    this call (0 on subsequent calls).
+    """
+    if _has_kv(store):
+        row = store._conn.execute(
+            "SELECT value FROM indexing_kv WHERE key = 'backfill_done'"
+        ).fetchone()
+        if row is not None:
+            return 0
+
+    _ensure_kv_table(store)
+    inserted = 0
+    with store.batch():
+        for r in vault.list_indexed_files(limit=100_000, offset=0):
+            path = Path(r.file_path)
+            if path.exists():
+                size = path.stat().st_size
+                status = "success"
+            else:
+                size = 0
+                status = "deleted"
+            # Legacy vault rows stored 16-char content_hash; new rows use 64-char.
+            # We keep the legacy value as-is: _hash_matches() in ChangeDetector
+            # handles the prefix comparison so these rows still trigger
+            # unchanged detection correctly.
+            store.upsert(FileRecord(
+                project_id=project_id,
+                file_path=str(path),
+                file_mtime=float(r.mtime),
+                file_size=size,
+                content_hash=r.content_hash,
+                indexed_at=float(r.indexed_at),
+                status=status,
+                error_message=None,
+                entity_count=None,
+                chunk_count=r.chunk_count,
+            ))
+            inserted += 1
+        store._conn.execute(
+            "INSERT OR REPLACE INTO indexing_kv (key, value)"
+            " VALUES ('backfill_done', '1')"
+        )
+    return inserted
+
+
+def _ensure_kv_table(store: IndexingStore) -> None:
+    """Create the ``indexing_kv`` auxiliary table if it does not exist."""
+    store._conn.execute(
+        "CREATE TABLE IF NOT EXISTS indexing_kv ("
+        "  key TEXT PRIMARY KEY,"
+        "  value TEXT NOT NULL"
+        ")"
+    )
+
+
+def _has_kv(store: IndexingStore) -> bool:
+    """Return True iff the ``indexing_kv`` table exists in *store*."""
+    row = store._conn.execute(
+        "SELECT name FROM sqlite_master"
+        " WHERE type='table' AND name='indexing_kv'"
+    ).fetchone()
+    return row is not None

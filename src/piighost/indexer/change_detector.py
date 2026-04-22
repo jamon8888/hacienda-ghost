@@ -21,6 +21,17 @@ from piighost.indexer.ingestor import list_document_paths
 _STAT_EPSILON = 2.0
 
 
+def _hash_matches(stored: str, fresh_full: str) -> bool:
+    """Compare stored hash to fresh full 64-char SHA-256.
+
+    Legacy vault rows stored a 16-char prefix; new rows store the full
+    64-char hex.  This helper handles both cases transparently.
+    """
+    if len(stored) == 16:
+        return fresh_full.startswith(stored)
+    return fresh_full == stored
+
+
 @dataclass
 class ChangeSet:
     new: list[Path] = field(default_factory=list)
@@ -87,7 +98,7 @@ class ChangeDetector:
                 unchanged.append(p)
                 continue
             # Fall back to content hash
-            if content_hash_full(p) == rec.content_hash:
+            if _hash_matches(rec.content_hash, content_hash_full(p)):
                 unchanged.append(p)
             else:
                 modified.append(p)
