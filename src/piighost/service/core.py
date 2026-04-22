@@ -470,6 +470,35 @@ class _ProjectService:
         entries = self._vault.search_entities(query, limit=limit)
         return [self._to_entry_model(e, reveal=reveal) for e in entries]
 
+    async def check_folder_changes(
+        self, folder: Path, *, recursive: bool = True
+    ) -> "FolderChangesResult":
+        from piighost.indexer.change_detector import ChangeDetector
+        from piighost.indexer.batch_scheduler import classify_batch
+        from piighost.service.models import FolderChangesResult, FileChangeEntry
+        from piighost.indexer.indexing_store import backfill_from_vault
+
+        backfill_from_vault(self._indexing_store, self._vault, self._project_name)
+        det = ChangeDetector(store=self._indexing_store, project_id=self._project_name)
+        cs = await det.scan_async(folder, recursive=recursive)
+        tier = classify_batch(cs, self._config.incremental)
+
+        def _entry(p: Path) -> FileChangeEntry:
+            try:
+                return FileChangeEntry(file_path=str(p), size=p.stat().st_size)
+            except OSError:
+                return FileChangeEntry(file_path=str(p), size=0)
+
+        return FolderChangesResult(
+            folder=str(folder),
+            project=self._project_name,
+            new=[_entry(p) for p in cs.new],
+            modified=[_entry(p) for p in cs.modified],
+            deleted=[str(p) for p in cs.deleted],
+            unchanged_count=len(cs.unchanged),
+            tier=tier.value,
+        )
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -598,6 +627,25 @@ class PIIGhostService:
         # Reset so next run starts fresh
         self._cancel_registry.reset(resolved)
         return report.model_copy(update={"project": resolved})
+
+    async def check_folder_changes(
+        self,
+        folder: str,
+        *,
+        recursive: bool = True,
+        project: str | None = None,
+    ) -> "FolderChangesResult":
+        from piighost.service.project_path import derive_project_from_path
+        folder_path = Path(folder).expanduser().resolve()
+        resolved = project if project is not None else derive_project_from_path(folder_path)
+        svc = await self._get_project(resolved, auto_create=True)
+        return await svc.check_folder_changes(folder_path, recursive=recursive)
+
+    async def cancel_indexing(self, *, project: str = "default") -> "CancelResult":
+        from piighost.service.models import CancelResult
+        token = self._cancel_registry.get_or_create(project)
+        token.cancel()
+        return CancelResult(project=project, cancelled=True)
 
     async def remove_doc(self, path: Path, *, project: str = "default") -> bool:
         svc = await self._get_project(project)
