@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import sys
 import urllib.request
+from pathlib import Path
 
 
 class PreflightError(RuntimeError):
@@ -10,7 +11,7 @@ class PreflightError(RuntimeError):
 
 
 def check_disk_space(min_gb: float = 2.0) -> None:
-    usage = shutil.disk_usage("/")
+    usage = shutil.disk_usage(Path.home())
     free_gb = usage.free / 1024**3
     if free_gb < min_gb:
         raise PreflightError(
@@ -31,8 +32,8 @@ def check_internet() -> None:
 
 
 def check_python_version() -> None:
-    if sys.version_info < (3, 10):
+    if sys.version_info < (3, 12):
         raise PreflightError(
-            f"Python 3.10+ required (found {sys.version_info[0]}.{sys.version_info[1]}). "
+            f"Python 3.12+ required (found {sys.version_info[0]}.{sys.version_info[1]}). "
             f"Run: uv python install 3.12"
         )
