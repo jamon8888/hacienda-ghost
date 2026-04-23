@@ -90,6 +90,9 @@ FR_PERMIS_CONDUIRE_PATTERN = Pattern(
 # French individual tax identifier (numéro fiscal / SPI), always 13 digits.
 # Must precede CREDIT_CARD in DEFAULT_PATTERNS: old 13-digit Visa cards also
 # pass Luhn, but are vanishingly rare in French legal documents.
+# Note: a standalone 13-digit NIR body (without its 2-digit key) would also
+# match here and be labelled FR_NIF. In practice French legal documents always
+# carry the full 15-digit NIR, so this collision is considered acceptable.
 _FR_NIF_RE = re.compile(r"\b\d{13}\b")
 
 FR_NIF_PATTERN = Pattern(
