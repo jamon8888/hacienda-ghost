@@ -155,7 +155,7 @@ async def main() -> None:
     from piighost.resolver.entity import MergeEntityConflictResolver
     from piighost.resolver.span import ConfidenceSpanConflictResolver
 
-    # Pass all 33 French labels as a list — each label maps to itself.
+    # Pass all 34 French labels as a list — each label maps to itself.
     # The placeholder will read e.g. <nom_personne:abc123>.
     french_labels = list(LABEL_MAP.keys())
 
