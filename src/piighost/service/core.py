@@ -654,6 +654,14 @@ async def _build_default_detector(config: ServiceConfig) -> _Detector:
         from piighost.detector.gliner2 import Gliner2Detector
 
         model = GLiNER2.from_pretrained(config.detector.gliner2_model)
+        if config.detector.gliner2_adapter:
+            from pathlib import Path as _Path
+
+            adapter = config.detector.gliner2_adapter
+            if not _Path(adapter).exists():
+                from huggingface_hub import snapshot_download
+                adapter = snapshot_download(repo_id=adapter)
+            model.load_adapter(adapter)
         return Gliner2Detector(model=model, labels=config.detector.labels)
     raise NotImplementedError(
         f"detector backend {config.detector.backend!r} not shipped yet"
