@@ -1,0 +1,43 @@
+schema_version = 1
+
+[vault]
+placeholder_factory = "hash"
+audit_log = true
+
+[detector]
+backend = "gliner2"
+gliner2_model = "jamon8888/french-pii-legal-ner-quantized"
+threshold = 0.4
+labels = [
+    "adresse", "avocat", "base_legale_traitement", "condamnation_penale",
+    "date", "date_naissance", "donnee_biometrique", "donnee_genetique",
+    "donnee_sante", "email", "juge", "lieu", "lieu_naissance", "nationalite",
+    "nom_personne", "notaire", "numero_affaire", "numero_carte_identite",
+    "numero_compte_bancaire", "numero_passeport", "numero_securite_sociale",
+    "numero_siret", "numero_telephone", "opinion_politique", "organisation",
+    "orientation_sexuelle", "origine_ethnique", "plaque_immatriculation",
+    "prenom", "profession", "religion", "salaire", "tribunal",
+    "appartenance_syndicale",
+]
+
+[embedder]
+backend = "local"
+local_model = "OrdalieTech/Solon-embeddings-base-0.1"
+
+[index]
+store = "lancedb"
+chunk_size = 512
+chunk_overlap = 64
+bm25_weight = 0.4
+vector_weight = 0.6
+
+[reranker]
+backend = "none"
+
+[daemon]
+idle_timeout_sec = 3600
+
+[safety]
+strict_rehydrate = true
+max_doc_bytes = 10485760
+redact_errors = true
