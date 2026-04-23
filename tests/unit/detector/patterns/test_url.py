@@ -30,3 +30,23 @@ def test_url_label():
 
 def test_url_confidence():
     assert URL_PATTERN.confidence == 0.99
+
+
+def test_strips_trailing_period():
+    # In "see https://example.com." the period is sentence punctuation, not part of the URL.
+    m = URL_PATTERN.regex.search("see https://example.com.")
+    assert m is not None
+    assert m.group(0) == "https://example.com"
+
+
+def test_strips_trailing_comma():
+    m = URL_PATTERN.regex.search("visit https://example.com/path, then close")
+    assert m is not None
+    assert m.group(0) == "https://example.com/path"
+
+
+def test_preserves_url_with_query_string():
+    # Query strings contain = and & which must not be stripped
+    m = URL_PATTERN.regex.search("data at https://api.example.com/v1?key=abc&limit=10")
+    assert m is not None
+    assert m.group(0) == "https://api.example.com/v1?key=abc&limit=10"
