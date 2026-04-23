@@ -18,6 +18,7 @@ from piighost.cli.commands.projects import app as projects_app
 from piighost.cli.commands.vault import vault_app
 from piighost.cli.docker_cmd import app as docker_app
 from piighost.cli.self_update import app as self_update_app
+from piighost.install import run as install_run
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -34,6 +35,7 @@ app.command("query")(query_cmd.run)
 app.command("serve")(serve_cmd.run)
 app.command("rm")(rm_cmd.run)
 app.command("index-status")(index_status_cmd.run)
+app.command("install")(install_run)
 app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(projects_app, name="projects")
