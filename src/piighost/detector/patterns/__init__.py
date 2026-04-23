@@ -9,10 +9,13 @@ from piighost.detector.patterns.ip import IPV4_PATTERN, IPV6_PATTERN
 from piighost.detector.patterns.national_id import (
     DE_PERSONALAUSWEIS_PATTERN,
     FR_NIR_PATTERN,
+    FR_NIF_PATTERN,
     FR_PASSPORT_PATTERN,
+    FR_PERMIS_CONDUIRE_PATTERN,
     FR_SIRET_PATTERN,
 )
 from piighost.detector.patterns.phone import PHONE_PATTERN
+from piighost.detector.patterns.url import URL_PATTERN
 from piighost.detector.patterns.vat import VAT_PATTERN
 
 DEFAULT_PATTERNS: list[Pattern] = [
@@ -20,16 +23,19 @@ DEFAULT_PATTERNS: list[Pattern] = [
     PHONE_PATTERN,
     IPV4_PATTERN,
     IPV6_PATTERN,
-    # FR_SIRET must precede CREDIT_CARD: both are 14-digit Luhn numbers.
-    # The overlap resolver keeps the first match, so SIRET wins over CREDIT_CARD
-    # when they match the same span. 14-digit payment cards (old Diners Club)
-    # are obsolete and vanishingly rare in French legal documents.
+    URL_PATTERN,
+    # FR_SIRET and FR_NIF must precede CREDIT_CARD: both are digit-only sequences
+    # (14d and 13d) that can coincide with Luhn-valid payment card numbers.
+    # The overlap resolver keeps the first match per span. In French legal
+    # documents these lengths almost never represent payment cards.
     FR_SIRET_PATTERN,
+    FR_NIF_PATTERN,
     CREDIT_CARD_PATTERN,
     IBAN_PATTERN,
     VAT_PATTERN,
     DATE_PATTERN,
     FR_NIR_PATTERN,
+    FR_PERMIS_CONDUIRE_PATTERN,
     FR_PASSPORT_PATTERN,
     DE_PERSONALAUSWEIS_PATTERN,
 ]
