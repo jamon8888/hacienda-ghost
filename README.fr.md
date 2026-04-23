@@ -294,6 +294,33 @@ Le LLM ne voit **jamais** le vrai nom. Les outils reçoivent les **vraies** vale
 
 ## Installation
 
+### Installation en une commande (recommandée)
+
+Une seule ligne à copier-coller. Le script installe `uv` s'il manque, installe `piighost` avec le MCP et la détection NER, télécharge les modèles (GLiNER2 + adaptateur français + embeddings Solon), et enregistre le serveur MCP dans Claude Desktop.
+
+**macOS / Linux :**
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.sh | sh
+```
+
+**Windows (PowerShell) :**
+
+```powershell
+irm https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.ps1 | iex
+```
+
+À la fin, redémarrez Claude Desktop — `piighost` apparaît dans le menu MCP.
+
+**Déjà `uv` installé ?**
+
+```bash
+uv tool install "piighost[mcp,index,gliner2]" --python 3.12
+piighost install --full
+```
+
+**Options de `piighost install` :** `--full` (tous les modèles), `--reranker` (ajoute BGE), `--no-docker` (force `uv`), `--dry-run` (aperçu sans modification), `--force` (écrase la config MCP existante). La commande utilise Docker si le démon tourne, sinon `uv`.
+
 ### Installation Python (uv)
 
 Gestion de dépendances via [uv](https://docs.astral.sh/uv/).

@@ -51,6 +51,7 @@ Les deux voies partagent le même moteur (`piighost`). Le plugin `hacienda` est 
 - [Fonctionnalités](#fonctionnalités)
 - [Comment ça marche ?](#comment-ça-marche-)
 - [Installation](#installation)
+  - [Installation en une commande (recommandée)](#installation-en-une-commande-recommandée)
   - [Installation Python (uv)](#installation-python-uv)
   - [Installation Claude Desktop (MCP)](#installation-claude-desktop-mcp)
   - [Installation Docker](#installation-docker)
@@ -343,6 +344,43 @@ Le LLM ne voit **jamais** le vrai nom. Les outils reçoivent les **vraies** vale
 ---
 
 ## Installation
+
+### Installation en une commande (recommandée)
+
+Une seule ligne à copier-coller. Le script installe `uv` s'il manque, installe `piighost` avec le MCP et la détection NER, télécharge les modèles (GLiNER2 + adaptateur français + embeddings Solon), et enregistre le serveur MCP dans Claude Desktop.
+
+**macOS / Linux :**
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.sh | sh
+```
+
+**Windows (PowerShell) :**
+
+```powershell
+irm https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.ps1 | iex
+```
+
+À la fin, redémarrez Claude Desktop — `piighost` apparaît dans le menu MCP.
+
+**Déjà `uv` installé ?** La commande Python équivalente :
+
+```bash
+uv tool install "piighost[mcp,index,gliner2]" --python 3.12
+piighost install --full
+```
+
+**Options de `piighost install` :**
+
+| Option | Effet |
+|---|---|
+| `--full` | Télécharge tous les modèles (NER + embedder Solon) |
+| `--reranker` | Ajoute aussi le modèle de reranking (BGE) |
+| `--no-docker` | Force le chemin `uv` même si Docker est détecté |
+| `--dry-run` | Affiche les étapes sans rien modifier |
+| `--force` | Écrase une configuration MCP `piighost` existante |
+
+La commande détecte automatiquement Docker : si le démon Docker tourne, elle lance `docker compose up` plutôt que d'installer les modèles localement. Pour forcer l'un ou l'autre, utilisez `--no-docker`.
 
 ### Installation Python (uv)
 
