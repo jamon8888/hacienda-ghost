@@ -28,6 +28,31 @@ def _fr_nir_validator(text: str) -> bool:
 
 _DE_ID_RE = re.compile(r"\b[A-Z]\d{8}\b")
 
+# SIRET: 14-digit French business identifier, validates with Luhn algorithm.
+# Format: 9-digit SIREN + 5-digit NIC (e.g. 55204944776279).
+_FR_SIRET_RE = re.compile(r"\b\d{14}\b")
+
+
+def _fr_siret_validator(text: str) -> bool:
+    digits = [int(c) for c in text if c.isdigit()]
+    if len(digits) != 14:
+        return False
+    total = 0
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+# French passport: biometric (2 digits + 2 uppercase + 5 digits) or older
+# formats with 2 uppercase letters followed by 6–7 digits.
+_FR_PASSPORT_RE = re.compile(
+    r"\b(?:\d{2}[A-Z]{2}\d{5}|[A-Z]{2}\d{6,7})\b"
+)
+
 
 DE_PERSONALAUSWEIS_PATTERN = Pattern(
     label="DE_PERSONALAUSWEIS",
@@ -38,4 +63,15 @@ FR_NIR_PATTERN = Pattern(
     label="FR_NIR",
     regex=_FR_NIR_RE,
     validator=_fr_nir_validator,
+)
+
+FR_SIRET_PATTERN = Pattern(
+    label="FR_SIRET",
+    regex=_FR_SIRET_RE,
+    validator=_fr_siret_validator,
+)
+
+FR_PASSPORT_PATTERN = Pattern(
+    label="FR_PASSPORT",
+    regex=_FR_PASSPORT_RE,
 )

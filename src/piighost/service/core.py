@@ -786,7 +786,17 @@ async def _build_default_detector(config: ServiceConfig) -> _Detector:
         from piighost.detector.gliner2 import Gliner2Detector
 
         model = GLiNER2.from_pretrained(config.detector.gliner2_model)
-        return Gliner2Detector(model=model, labels=config.detector.labels)
+        ner = Gliner2Detector(
+            model=model,
+            labels=config.detector.labels,
+            threshold=config.detector.threshold,
+        )
+        if config.detector.regex_fallback:
+            from piighost.detector.base import CompositeDetector
+            from piighost.detector.regex import RegexDetector
+
+            return CompositeDetector(detectors=[ner, RegexDetector()])
+        return ner
     raise NotImplementedError(
         f"detector backend {config.detector.backend!r} not shipped yet"
     )

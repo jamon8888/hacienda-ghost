@@ -5,7 +5,8 @@ import re
 from piighost.detector.patterns._base import Pattern
 
 _PHONE_RE = re.compile(
-    r"\+\d{1,3}(?:[ .\-]?\d{1,4}){2,6}"
+    r"(?:\+\d{1,3}(?:[ .\-]?\d{1,4}){2,6}"  # international: +33 6 12 34 56 78
+    r"|\b0[1-9](?:[ .\-]?\d{2}){4}\b)"       # French national: 06 12 34 56 78
 )
 
 

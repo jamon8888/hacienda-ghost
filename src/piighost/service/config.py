@@ -39,6 +39,7 @@ class DetectorSection(BaseModel):
             "PHONE", "IBAN", "CREDIT_CARD", "ID",
         ]
     )
+    regex_fallback: bool = True
 
 
 class EmbedderSection(BaseModel):
