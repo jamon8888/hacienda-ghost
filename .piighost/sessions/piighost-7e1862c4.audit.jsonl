@@ -1,0 +1,2 @@
+{"ts": "2026-04-24T11:47:08.102381+00:00", "event": "query", "payload": {"test": "real-situation-check", "project": "piighost-7e1862c4"}}
+{"ts": "2026-04-24T11:47:13.193979+00:00", "event": "rehydrate", "payload": {"note": "second entry"}}

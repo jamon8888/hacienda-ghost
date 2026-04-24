@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:haystack.deepset.ai)",
+      "WebFetch(domain:docs.haystack.deepset.ai)",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(uv run *)",
+      "Bash(uv sync *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(uv add *)",
+      "Bash(git stash *)",
+      "Bash(dir \"C:\\\\Users\\\\NMarchitecte\\\\Documents\\\\piighost\\\\.worktrees\")",
+      "Bash(python -c \"from piighost.service.config import ServiceConfig; print\\('OK'\\)\")"
+    ]
+  }
+}

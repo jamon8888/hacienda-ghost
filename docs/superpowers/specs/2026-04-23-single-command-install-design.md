@@ -179,7 +179,7 @@ All steps are idempotent — safe to re-run after a partial failure.
 - `docker compose pull` fails: abort, show compose error, suggest `--no-docker`
 
 ### uv path failures
-- uv not found and auto-install fails: print manual install URL, exit gracefully
+- uv not found (only possible when `piighost install` is called directly, not via bootstrap scripts which pre-install uv): print manual install URL, exit gracefully
 - `uv tool install` fails: print pip fallback `pip install "piighost[mcp,index,gliner2]"`
 
 ### Model warm-up failures
