@@ -70,3 +70,21 @@ def status(
         typer.echo("proxy: not running")
         raise typer.Exit(code=1)
     typer.echo(f"proxy: running pid={hs.pid} port={hs.port}")
+
+
+@proxy_app.command("logs")
+def logs(
+    vault: Annotated[Path, typer.Option(help="Vault dir")] = Path.home() / ".piighost",
+    tail: Annotated[int, typer.Option("--tail", "-n", help="Last N lines to show")] = 50,
+) -> None:
+    """Tail the proxy audit log (current month)."""
+    import datetime
+
+    now = datetime.datetime.now()
+    log_file = vault / "audit" / f"{now.year}-{now.month:02d}" / "sessions.ndjson"
+    if not log_file.exists():
+        typer.echo(f"No audit log at {log_file}")
+        raise typer.Exit(code=1)
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    for line in lines[-tail:]:
+        typer.echo(line)
