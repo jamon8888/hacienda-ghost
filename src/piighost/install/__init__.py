@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from piighost.install import claude_config, docker, models, preflight, uv_path
+from piighost.install import ca as ca_mod
+from piighost.install import claude_config, docker, host_config, models, preflight, trust_store, uv_path
 from piighost.install.ui import error, info, step, success, warn
 from piighost.service.config import ServiceConfig
 
@@ -32,8 +34,18 @@ def run(
     no_docker: Annotated[bool, typer.Option("--no-docker", help="Force uv path")] = False,
     reranker: Annotated[bool, typer.Option("--reranker", help="Also warm up reranker")] = False,
     force: Annotated[bool, typer.Option("--force", help="Overwrite existing config; ignore disk warning")] = False,
+    mode: Annotated[str, typer.Option("--mode", help="Install mode: 'light' (CA + proxy, no Docker) or 'strict' (Phase 2)")] = "light",
 ) -> None:
     """Install piighost with all models and register it in Claude Desktop."""
+    # Phase 1: light mode — generate CA, write settings.json. Skip heavy install steps.
+    if mode == "strict":
+        typer.echo("--mode=strict is not yet implemented (Phase 2).")
+        raise typer.Exit(code=2)
+
+    if mode == "light":
+        _run_light_mode()
+        return
+
     if dry_run:
         info("Dry run — no changes will be made.")
 
@@ -134,6 +146,41 @@ def run(
 
     # Done
     success("\npiighost is ready. Restart Claude Desktop to activate the MCP server.")
+
+
+def _run_light_mode() -> None:
+    """Phase 1 light-mode orchestration: CA generation + OS trust store + Claude Code settings."""
+    # Step: Generate CA and leaf cert
+    step("Generating local root CA and leaf certificate")
+    vault = Path(os.path.expanduser("~")) / ".piighost"
+    proxy_dir = vault / "proxy"
+    proxy_dir.mkdir(parents=True, exist_ok=True)
+    root = ca_mod.generate_root(common_name="piighost local CA")
+    leaf = ca_mod.generate_leaf(root, hostnames=["localhost", "127.0.0.1"])
+    (proxy_dir / "ca.pem").write_bytes(root.cert_pem)
+    (proxy_dir / "ca.key").write_bytes(root.key_pem)
+    (proxy_dir / "leaf.pem").write_bytes(leaf.cert_pem)
+    (proxy_dir / "leaf.key").write_bytes(leaf.key_pem)
+    success("CA and leaf cert written to ~/.piighost/proxy/")
+
+    # Step: Install CA into OS trust store
+    step("Installing CA into OS trust store")
+    if os.environ.get("PIIGHOST_SKIP_TRUSTSTORE") == "1":
+        info("PIIGHOST_SKIP_TRUSTSTORE=1 — skipping trust store installation.")
+    else:
+        try:
+            trust_store.install_ca(proxy_dir / "ca.pem")
+            success("CA installed in OS trust store.")
+        except Exception as exc:
+            warn(f"Trust store install failed: {exc} — install manually.")
+
+    # Step: Configure Claude Code base URL
+    step("Configuring Claude Code (ANTHROPIC_BASE_URL)")
+    settings_path = Path(os.path.expanduser("~")) / ".claude" / "settings.json"
+    host_config.set_claude_code_base_url(settings_path, "https://localhost:8443")
+    success(f"ANTHROPIC_BASE_URL written to {settings_path}")
+
+    success("\nLight mode installed. Start the proxy with: piighost proxy run")
 
 
 def _load_config() -> ServiceConfig:
