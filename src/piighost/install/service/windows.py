@@ -17,9 +17,11 @@ def _urlacl_url(spec: ServiceSpec) -> str:
 def install(spec: ServiceSpec) -> None:
     url = _urlacl_url(spec)
     username = os.environ.get("USERNAME") or spec.user
+    # urlacl is only relevant for http.sys (IIS/WCF). uvicorn uses raw winsock
+    # and doesn't need a reservation. Run check=False so non-admin installs don't abort.
     subprocess.run(
         ["netsh", "http", "add", "urlacl", f"url={url}", f"user={username}"],
-        check=True,
+        check=False,
     )
     # schtasks requires a single /tr string, not a list.
     tr_cmd = (

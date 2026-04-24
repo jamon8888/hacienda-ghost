@@ -91,7 +91,10 @@ def _write_file(path: Path, content: str) -> None:
         try:
             os.write(fd, content.encode())
             os.close(fd)
-            subprocess.run(["sudo", "mv", tmp_path, str(path)], check=True)
+            subprocess.run(
+                ["sudo", "install", "-m", "0644", "-o", "root", tmp_path, str(path)],
+                check=True,
+            )
         except Exception:
             try:
                 os.unlink(tmp_path)

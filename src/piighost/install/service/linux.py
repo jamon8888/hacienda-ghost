@@ -29,11 +29,11 @@ def _unit_content(spec: ServiceSpec) -> str:
         "\n"
         "[Service]\n"
         "Type=simple\n"
-        f"ExecStart={spec.bin_path} proxy run"
-        f" --port {spec.port}"
-        f" --vault {spec.vault_dir}"
-        f" --cert {spec.cert_path}"
-        f" --key {spec.key_path}\n"
+        f'ExecStart={spec.bin_path} proxy run'
+        f' --port {spec.port}'
+        f' --vault "{spec.vault_dir}"'
+        f' --cert "{spec.cert_path}"'
+        f' --key "{spec.key_path}"\n'
         "Restart=on-failure\n"
         "AmbientCapabilities=CAP_NET_BIND_SERVICE\n"
         "\n"

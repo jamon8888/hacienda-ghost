@@ -59,6 +59,9 @@ def test_strict_mode_calls_install_service(monkeypatch, tmp_path: Path) -> None:
     import piighost.install.hosts_file as hf
     monkeypatch.setattr(hf, "add_redirect", lambda *a, **kw: None)
 
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/piighost" if name == "piighost" else None)
+
     installed: list = []
     import piighost.install.service as svc
     monkeypatch.setattr(svc, "install_service", lambda spec: installed.append(spec))

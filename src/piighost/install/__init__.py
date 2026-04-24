@@ -224,20 +224,28 @@ def _run_strict_mode() -> None:
         info("PIIGHOST_SKIP_SERVICE=1 -- skipping service installation.")
     else:
         from piighost.install import service as svc
-        bin_path = shutil.which("piighost") or f"{sys.executable} -m piighost"
-        spec = svc.ServiceSpec(
-            name="com.piighost.proxy",
-            bin_path=bin_path,
-            vault_dir=vault,
-            cert_path=proxy_dir / "leaf.pem",
-            key_path=proxy_dir / "leaf.key",
-            port=443,
-        )
-        try:
-            svc.install_service(spec)
-            success("Background service installed and started.")
-        except Exception as exc:
-            warn(f"Service install failed: {exc}")
+        bin_path = shutil.which("piighost")
+        if bin_path is None:
+            warn(
+                "piighost binary not found on PATH. "
+                "Service registration requires piighost to be installed as a command. "
+                "Run: pip install piighost[proxy]"
+            )
+            warn("Skipping service installation.")
+        else:
+            spec = svc.ServiceSpec(
+                name="com.piighost.proxy",
+                bin_path=bin_path,
+                vault_dir=vault,
+                cert_path=proxy_dir / "leaf.pem",
+                key_path=proxy_dir / "leaf.key",
+                port=443,
+            )
+            try:
+                svc.install_service(spec)
+                success("Background service installed and started.")
+            except Exception as exc:
+                warn(f"Service install failed: {exc}")
 
     success("\nStrict mode installed. Verify with: piighost doctor")
 
