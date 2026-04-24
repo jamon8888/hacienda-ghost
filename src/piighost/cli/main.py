@@ -20,6 +20,7 @@ from piighost.cli.commands.proxy import proxy_app
 from piighost.cli.commands.vault import vault_app
 from piighost.cli.docker_cmd import app as docker_app
 from piighost.cli.self_update import app as self_update_app
+from piighost.cli.commands import uninstall as uninstall_cmd
 from piighost.install import run as install_run
 
 app = typer.Typer(
@@ -39,6 +40,7 @@ app.command("serve")(serve_cmd.run)
 app.command("rm")(rm_cmd.run)
 app.command("index-status")(index_status_cmd.run)
 app.command("install")(install_run)
+app.command("uninstall")(uninstall_cmd.run)
 app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(projects_app, name="projects")
