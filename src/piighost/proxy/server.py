@@ -1,9 +1,9 @@
 """Starlette app for the anonymizing proxy."""
 from __future__ import annotations
 
-import secrets
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Protocol
@@ -32,6 +32,7 @@ def build_app(
     vault_dir: Path,
     upstream_base_url: str = "https://api.anthropic.com",
     upstream_transport: httpx.AsyncBaseTransport | None = None,
+    token: str = "",
 ) -> Starlette:
     upstream = AnthropicUpstream(
         base_url=upstream_base_url,
@@ -43,7 +44,12 @@ def build_app(
         return JSONResponse({"ok": True})
 
     async def messages(request: Request) -> StreamingResponse | JSONResponse:
-        body = await request.json()
+        if token and request.headers.get("x-piighost-token") != token:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
         try:
             project = await service.active_project()
         except Exception as exc:
@@ -65,9 +71,12 @@ def build_app(
         }
 
         started = time.monotonic()
-        upstream_resp = await upstream.post(
-            "/v1/messages", json=rewritten, headers=headers
-        )
+        try:
+            upstream_resp = await upstream.post(
+                "/v1/messages", json=rewritten, headers=headers
+            )
+        except Exception as exc:
+            return JSONResponse({"error": f"upstream unreachable: {exc}"}, status_code=502)
 
         async def body_iter() -> AsyncIterator[bytes]:
             try:
@@ -100,7 +109,13 @@ def build_app(
             media_type=upstream_resp.headers.get("content-type", "text/event-stream"),
         )
 
+    @asynccontextmanager
+    async def _lifespan(app_: Starlette):
+        yield
+        await upstream.aclose()
+
     return Starlette(
+        lifespan=_lifespan,
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/v1/messages", messages, methods=["POST"]),

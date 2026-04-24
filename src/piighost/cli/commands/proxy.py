@@ -29,6 +29,8 @@ def run(
     from piighost.proxy.server import build_app
 
     async def _run() -> None:
+        import secrets
+
         from piighost.service.core import PIIGhostService
         cfg_path = vault / "config.toml"
         if cfg_path.exists():
@@ -39,8 +41,9 @@ def run(
             cfg = ServiceConfig.default()
         service = await PIIGhostService.create(vault_dir=vault, config=cfg)
         try:
-            app_obj = build_app(service=service, vault_dir=vault)
-            write_handshake(vault, ProxyHandshake(pid=os.getpid(), port=port, token=""))
+            tok = secrets.token_urlsafe(32)
+            write_handshake(vault, ProxyHandshake(pid=os.getpid(), port=port, token=tok))
+            app_obj = build_app(service=service, vault_dir=vault, token=tok)
             config = uvicorn.Config(
                 app_obj,
                 host=host,

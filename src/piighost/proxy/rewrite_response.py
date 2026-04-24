@@ -45,46 +45,62 @@ async def rewrite_sse_stream(
 ) -> AsyncIterator[bytes]:
     """Yield rewritten SSE bytes. One StreamBuffer per content-block index."""
     buffers: dict[int, StreamBuffer] = {}
+    block_types: dict[int, str] = {}
+    line_buf = b""
 
-    async for raw_chunk in upstream:
-        for event, data in _parse_sse(raw_chunk):
-            if event == "content_block_start":
-                idx = data.get("index", 0)
-                buffers[idx] = StreamBuffer()
-                yield _format_sse(event, data)
-            elif event == "content_block_delta":
-                idx = data.get("index", 0)
-                buf = buffers.setdefault(idx, StreamBuffer())
-                delta = data.get("delta", {})
-                dtype = delta.get("type")
-                if dtype == "text_delta":
-                    text = delta.get("text", "")
-                    emitted = buf.feed(text)
-                    if emitted:
-                        rehyd = await rehydrator.rehydrate(emitted, project=project)
-                        delta["text"] = rehyd
-                        yield _format_sse(event, data)
-                elif dtype == "input_json_delta":
-                    raw = delta.get("partial_json", "")
-                    emitted = buf.feed(raw)
-                    if emitted:
-                        rehyd = await rehydrator.rehydrate(emitted, project=project)
-                        delta["partial_json"] = rehyd
-                        yield _format_sse(event, data)
-                else:
+    async def _handle_event(event: str, data: dict):
+        if event == "content_block_start":
+            idx = data.get("index", 0)
+            buffers[idx] = StreamBuffer()
+            block_types[idx] = data.get("content_block", {}).get("type", "text")
+            yield _format_sse(event, data)
+        elif event == "content_block_delta":
+            idx = data.get("index", 0)
+            buf = buffers.setdefault(idx, StreamBuffer())
+            delta = data.get("delta", {})
+            dtype = delta.get("type")
+            if dtype == "text_delta":
+                text = delta.get("text", "")
+                emitted = buf.feed(text)
+                if emitted:
+                    rehyd = await rehydrator.rehydrate(emitted, project=project)
+                    delta["text"] = rehyd
                     yield _format_sse(event, data)
-            elif event == "content_block_stop":
-                idx = data.get("index", 0)
-                buf = buffers.pop(idx, None)
-                if buf:
-                    tail = buf.flush()
-                    if tail:
-                        rehyd = await rehydrator.rehydrate(tail, project=project)
-                        flush_event = {
-                            "index": idx,
-                            "delta": {"type": "text_delta", "text": rehyd},
-                        }
-                        yield _format_sse("content_block_delta", flush_event)
-                yield _format_sse(event, data)
+            elif dtype == "input_json_delta":
+                raw = delta.get("partial_json", "")
+                emitted = buf.feed(raw)
+                if emitted:
+                    rehyd = await rehydrator.rehydrate(emitted, project=project)
+                    delta["partial_json"] = rehyd
+                    yield _format_sse(event, data)
             else:
                 yield _format_sse(event, data)
+        elif event == "content_block_stop":
+            idx = data.get("index", 0)
+            buf = buffers.pop(idx, None)
+            btype = block_types.pop(idx, "text")
+            if buf:
+                tail = buf.flush()
+                if tail:
+                    rehyd = await rehydrator.rehydrate(tail, project=project)
+                    if btype == "tool_use":
+                        flush_delta = {"type": "input_json_delta", "partial_json": rehyd}
+                    else:
+                        flush_delta = {"type": "text_delta", "text": rehyd}
+                    flush_event = {"index": idx, "delta": flush_delta}
+                    yield _format_sse("content_block_delta", flush_event)
+            yield _format_sse(event, data)
+        else:
+            yield _format_sse(event, data)
+
+    async for raw_chunk in upstream:
+        line_buf += raw_chunk
+        while b"\n\n" in line_buf:
+            block, line_buf = line_buf.split(b"\n\n", 1)
+            for event, data in _parse_sse(block + b"\n\n"):
+                async for chunk in _handle_event(event, data):
+                    yield chunk
+
+    if line_buf.strip():
+        for event, data in _parse_sse(line_buf):
+            yield _format_sse(event, data)
