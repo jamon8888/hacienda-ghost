@@ -45,6 +45,13 @@ def run(vault: Path | None = typer.Option(None, "--vault", help="Vault directory
     else:
         typer.echo("  ok")
 
+    typer.echo("Checking hosts file redirect (strict mode)...")
+    from piighost.install.hosts_file import has_redirect
+    if has_redirect("api.anthropic.com"):
+        typer.echo("  ok: api.anthropic.com -> 127.0.0.1")
+    else:
+        typer.echo("  info: no hosts-file redirect (light mode or strict not installed)")
+
     if failures:
         typer.echo("")
         typer.echo("FAILURES:")
