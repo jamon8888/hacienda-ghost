@@ -13,6 +13,7 @@
       ],
       "env": {
         "HACIENDA_DATA_DIR": "${HOME}/.hacienda",
+        "PIIGHOST_DETECTOR": "regex_only",
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8"
       }
