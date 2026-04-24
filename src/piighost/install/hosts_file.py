@@ -22,11 +22,15 @@ def _resolve(hosts_path: Path | None) -> Path:
 
 
 def has_redirect(host: str, *, hosts_path: Path | None = None) -> bool:
+    import re
     path = _resolve(hosts_path)
     if not path.exists():
         return False
     text = path.read_text(encoding="utf-8", errors="replace")
-    return _SENTINEL_BEGIN in text and f" {host}" in text
+    if _SENTINEL_BEGIN not in text:
+        return False
+    pattern = re.compile(rf"^\s*\S+\s+{re.escape(host)}\s*$", re.MULTILINE)
+    return bool(pattern.search(text))
 
 
 def add_redirect(
@@ -43,7 +47,7 @@ def add_redirect(
     block = f"\n{_SENTINEL_BEGIN}\n{ip} {host}\n{_SENTINEL_END}\n"
     new_content = cleaned.rstrip("\n") + "\n" + block
 
-    bak = path.with_suffix(".piighost.bak")
+    bak = path.with_name(path.name + ".piighost.bak")
     _write_file(bak, original)
     _write_file(path, new_content)
 
@@ -76,15 +80,21 @@ def _remove_sentinel(text: str) -> str:
 
 def _write_file(path: Path, content: str) -> None:
     try:
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(content, encoding="utf-8")
         os.replace(str(tmp), str(path))
     except PermissionError:
         if sys.platform == "win32":
             raise
-        subprocess.run(
-            ["sudo", "tee", str(path)],
-            input=content.encode(),
-            check=True,
-            stdout=subprocess.DEVNULL,
-        )
+        import tempfile
+        fd, tmp_path = tempfile.mkstemp(prefix="piighost_hosts_")
+        try:
+            os.write(fd, content.encode())
+            os.close(fd)
+            subprocess.run(["sudo", "mv", tmp_path, str(path)], check=True)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise

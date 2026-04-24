@@ -57,7 +57,7 @@ def test_add_redirect_creates_backup(tmp_path: Path) -> None:
     original = "127.0.0.1 localhost\n"
     hosts = _make_hosts(tmp_path, original)
     add_redirect("api.anthropic.com", hosts_path=hosts)
-    bak = hosts.with_suffix(".piighost.bak")
+    bak = hosts.with_name(hosts.name + ".piighost.bak")
     assert bak.exists()
     assert bak.read_text(encoding="utf-8") == original
 
@@ -69,4 +69,10 @@ def test_remove_redirect_noop_on_missing_file(tmp_path: Path) -> None:
 
 def test_has_redirect_false_on_missing_file(tmp_path: Path) -> None:
     hosts = tmp_path / "no_such_hosts"
+    assert has_redirect("api.anthropic.com", hosts_path=hosts) is False
+
+
+def test_has_redirect_no_false_positive_on_superstring(tmp_path: Path) -> None:
+    hosts = _make_hosts(tmp_path, "")
+    add_redirect("api.anthropic.com.evil.com", hosts_path=hosts)
     assert has_redirect("api.anthropic.com", hosts_path=hosts) is False
