@@ -1,4 +1,4 @@
-name: Phase 1 + 2 install smoke
+name: Phase 1 + 2 + 3 install smoke
 
 on:
   push:
@@ -26,4 +26,6 @@ jobs:
           PIIGHOST_SKIP_SERVICE: "1"
         run: uv run pytest tests/install -v
       - name: Run CLI tests (proxy, doctor, uninstall)
-        run: uv run pytest tests/cli/test_proxy_cmd.py tests/cli/test_doctor.py tests/cli/test_uninstall_cmd.py -v
+        run: uv run pytest tests/cli/test_proxy_cmd.py tests/cli/test_doctor.py tests/cli/test_doctor_probe.py tests/cli/test_uninstall_cmd.py -v
+      - name: Run Cowork probe script tests
+        run: uv run pytest tests/scripts/ -v

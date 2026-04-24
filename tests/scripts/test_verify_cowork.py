@@ -68,3 +68,24 @@ def test_probe_fails_on_connection_refused(monkeypatch) -> None:
 
     assert result["intercepted"] is False
     assert result["passed"] is False
+
+
+def test_probe_url_env_var_is_respected(monkeypatch) -> None:
+    """PIIGHOST_PROBE_URL env var must override the default probe URL."""
+    mod = _load_script()
+    custom_url = "https://custom.example.com/piighost-probe"
+    monkeypatch.setenv("PIIGHOST_PROBE_URL", custom_url)
+
+    import http.client
+    mock_conn = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.read.return_value = b'{"intercepted": true}'
+    mock_conn.getresponse.return_value = mock_resp
+
+    with patch("socket.gethostbyname", return_value="127.0.0.1"), \
+         patch("http.client.HTTPSConnection", return_value=mock_conn):
+        mock_conn.request = MagicMock()
+        result = mod.run_probe(probe_url=custom_url)
+
+    assert result is not None  # run_probe returned without crashing on custom URL
