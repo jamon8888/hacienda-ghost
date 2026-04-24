@@ -112,6 +112,8 @@ async def test_full_hacienda_flow(tmp_path: Path, monkeypatch) -> None:
         events = (await read.run({"session_id": "e2e-1"})).structured_content
         if isinstance(events, dict) and "result" in events:
             events = events["result"]
+        if isinstance(events, dict) and "entries" in events:
+            events = events["entries"]
         assert len(events) == 1
         assert events[0]["event"] == "query"
         # Safety invariant: audit payload must not contain raw PII

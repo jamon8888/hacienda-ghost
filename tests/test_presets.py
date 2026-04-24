@@ -1,5 +1,7 @@
 """Top-level presets module is the single source of truth."""
 
+import pytest
+
 from piighost.presets import PRESET_GDPR, PRESET_LANGUAGE, PRESET_SENSITIVITY
 
 
@@ -31,6 +33,7 @@ def test_language_preset_shape() -> None:
 
 def test_haystack_presets_are_same_objects() -> None:
     """BC: the Haystack re-export must be the identical dict object."""
+    pytest.importorskip("haystack", reason="haystack extra not installed")
     from piighost.integrations.haystack.presets import (
         PRESET_GDPR as HS_GDPR,
         PRESET_LANGUAGE as HS_LANGUAGE,

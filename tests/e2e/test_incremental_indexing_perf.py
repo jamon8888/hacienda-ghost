@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def _seed(folder: Path, n: int) -> None:
         (folder / f"f{i}.txt").write_text(f"Alice works in Paris row {i}")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows FS latency makes 500ms SLA unreliable")
 def test_detection_under_500ms_with_1000_unchanged_files(svc, tmp_path):
     folder = tmp_path / "f"
     _seed(folder, 1000)
