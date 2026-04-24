@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from typing import Generator
 
@@ -14,23 +15,29 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-console = Console()
+console = Console(highlight=False)
+
+_utf8 = (sys.stdout.encoding or "").lower() in {"utf-8", "utf8"}
+_STEP = "→"  if _utf8 else "->"
+_OK   = "✓"  if _utf8 else "ok"
+_WARN = "⚠"  if _utf8 else "!!"
+_FAIL = "✗"  if _utf8 else "xx"
 
 
 def step(message: str) -> None:
-    console.print(f"\n[bold cyan]→[/bold cyan] {message}")
+    console.print(f"\n[bold cyan]{_STEP}[/bold cyan] {message}")
 
 
 def success(message: str) -> None:
-    console.print(f"[bold green]✓[/bold green] {message}")
+    console.print(f"[bold green]{_OK}[/bold green] {message}")
 
 
 def warn(message: str) -> None:
-    console.print(f"[bold yellow]⚠[/bold yellow] {message}", style="yellow")
+    console.print(f"[bold yellow]{_WARN}[/bold yellow] {message}", style="yellow")
 
 
 def error(message: str) -> None:
-    console.print(f"[bold red]✗[/bold red] {message}", style="red")
+    console.print(f"[bold red]{_FAIL}[/bold red] {message}", style="red")
 
 
 def info(message: str) -> None:
