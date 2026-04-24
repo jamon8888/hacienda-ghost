@@ -43,6 +43,9 @@ def build_app(
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"ok": True})
 
+    async def probe(_: Request) -> JSONResponse:
+        return JSONResponse({"intercepted": True, "proxy": "piighost"})
+
     async def messages(request: Request) -> StreamingResponse | JSONResponse:
         if token and request.headers.get("x-piighost-token") != token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
@@ -118,6 +121,7 @@ def build_app(
         lifespan=_lifespan,
         routes=[
             Route("/health", health, methods=["GET"]),
+            Route("/piighost-probe", probe, methods=["GET"]),
             Route("/v1/messages", messages, methods=["POST"]),
         ]
     )
