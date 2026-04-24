@@ -5,7 +5,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/jamon8888/hacienda-ghost.git",
+        "piighost[gliner2] @ git+https://github.com/jamon8888/hacienda-ghost.git",
         "piighost",
         "serve",
         "--transport",
@@ -13,7 +13,6 @@
       ],
       "env": {
         "HACIENDA_DATA_DIR": "${HOME}/.hacienda",
-        "PIIGHOST_DETECTOR": "regex_only",
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8"
       }
