@@ -35,5 +35,8 @@ def remove_claude_code_base_url(settings: Path) -> None:
 
 
 def default_settings_path() -> Path:
-    """~/.claude/settings.json on all platforms."""
-    return Path.home() / ".claude" / "settings.json"
+    """~/.claude/settings.json on all platforms, honouring the HOME env var."""
+    import os
+    home_env = os.environ.get("HOME")
+    home = Path(home_env) if home_env else Path.home()
+    return home / ".claude" / "settings.json"
