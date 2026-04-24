@@ -92,8 +92,15 @@ index = [
     "sentence-transformers>=3.0",
     "pyarrow>=14.0",
 ]
+proxy = [
+    "cryptography>=42.0",
+    "uvicorn[standard]>=0.30",
+    "starlette>=0.37",
+    "httpx>=0.28",
+    "typer>=0.9",
+]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy]",
 ]
 
 [build-system]
@@ -125,6 +132,8 @@ dev = [
     "faker>=40.11",
     "langchain>=1.2",
     "langchain-core>=0.3",
+    "cryptography>=42.0",
+    "uvicorn[standard]>=0.30",
 ]
 faker = [
     "faker>=40.11.0",
