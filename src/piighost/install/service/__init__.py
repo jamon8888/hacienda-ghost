@@ -20,6 +20,12 @@ class ServiceSpec:
     )
 
 
+# Eagerly import platform modules so they exist as attributes for patching.
+from piighost.install.service import darwin  # noqa: E402
+from piighost.install.service import linux   # noqa: E402
+from piighost.install.service import windows  # noqa: E402
+
+
 def install_service(spec: ServiceSpec) -> None:
     _dispatch().install(spec)
 
@@ -34,10 +40,7 @@ def service_running(spec: ServiceSpec) -> bool:
 
 def _dispatch():
     if sys.platform == "darwin":
-        from piighost.install.service import darwin
         return darwin
     if sys.platform == "win32":
-        from piighost.install.service import windows
         return windows
-    from piighost.install.service import linux
     return linux
