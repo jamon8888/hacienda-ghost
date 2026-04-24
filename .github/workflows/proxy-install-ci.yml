@@ -1,4 +1,4 @@
-name: Phase 1 install smoke
+name: Phase 1 + 2 install smoke
 
 on:
   push:
@@ -20,7 +20,10 @@ jobs:
       - run: uv sync --all-extras
       - name: Run proxy tests
         run: uv run pytest tests/proxy -v
-      - name: Run install (trust-store mocked)
+      - name: Run install tests (trust-store and service mocked)
         env:
           PIIGHOST_SKIP_TRUSTSTORE: "1"
-        run: uv run pytest tests/install/test_install_light_mode.py -v
+          PIIGHOST_SKIP_SERVICE: "1"
+        run: uv run pytest tests/install -v
+      - name: Run CLI tests (proxy, doctor, uninstall)
+        run: uv run pytest tests/cli/test_proxy_cmd.py tests/cli/test_doctor.py tests/cli/test_uninstall_cmd.py -v

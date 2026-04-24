@@ -54,6 +54,7 @@ def test_strict_mode_calls_install_service(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("PIIGHOST_SKIP_TRUSTSTORE", "1")
+    monkeypatch.delenv("PIIGHOST_SKIP_SERVICE", raising=False)
 
     import piighost.install.hosts_file as hf
     monkeypatch.setattr(hf, "add_redirect", lambda *a, **kw: None)
