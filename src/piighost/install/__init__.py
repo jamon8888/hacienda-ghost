@@ -39,8 +39,8 @@ def run(
     """Install piighost with all models and register it in Claude Desktop."""
     # Phase 1: light mode — generate CA, write settings.json. Skip heavy install steps.
     if mode == "strict":
-        typer.echo("--mode=strict is not yet implemented (Phase 2).")
-        raise typer.Exit(code=2)
+        _run_strict_mode()
+        return
 
     if mode == "light":
         _run_light_mode()
@@ -181,6 +181,65 @@ def _run_light_mode() -> None:
     success(f"ANTHROPIC_BASE_URL written to {settings_path}")
 
     success("\nLight mode installed. Start the proxy with: piighost proxy run")
+
+
+def _run_strict_mode() -> None:
+    """Phase 2 strict-mode: CA for api.anthropic.com + hosts file + background service."""
+    import shutil
+    import sys
+
+    vault = Path(os.path.expanduser("~")) / ".piighost"
+    proxy_dir = vault / "proxy"
+    proxy_dir.mkdir(parents=True, exist_ok=True)
+
+    step("Generating local root CA and leaf certificate for api.anthropic.com")
+    root = ca_mod.generate_root(common_name="piighost local CA")
+    leaf = ca_mod.generate_leaf(root, hostnames=["api.anthropic.com"])
+    (proxy_dir / "ca.pem").write_bytes(root.cert_pem)
+    (proxy_dir / "ca.key").write_bytes(root.key_pem)
+    (proxy_dir / "leaf.pem").write_bytes(leaf.cert_pem)
+    (proxy_dir / "leaf.key").write_bytes(leaf.key_pem)
+    success("CA and leaf cert written to ~/.piighost/proxy/")
+
+    step("Installing CA into OS trust store")
+    if os.environ.get("PIIGHOST_SKIP_TRUSTSTORE") == "1":
+        info("PIIGHOST_SKIP_TRUSTSTORE=1 -- skipping trust store installation.")
+    else:
+        try:
+            trust_store.install_ca(proxy_dir / "ca.pem")
+            success("CA installed in OS trust store.")
+        except Exception as exc:
+            warn(f"Trust store install failed: {exc} -- install manually.")
+
+    step("Editing hosts file (127.0.0.1 api.anthropic.com)")
+    from piighost.install import hosts_file as hf
+    try:
+        hf.add_redirect("api.anthropic.com")
+        success("Hosts file updated.")
+    except Exception as exc:
+        warn(f"Hosts file edit failed: {exc}")
+
+    step("Installing background service (port 443)")
+    if os.environ.get("PIIGHOST_SKIP_SERVICE") == "1":
+        info("PIIGHOST_SKIP_SERVICE=1 -- skipping service installation.")
+    else:
+        from piighost.install import service as svc
+        bin_path = shutil.which("piighost") or f"{sys.executable} -m piighost"
+        spec = svc.ServiceSpec(
+            name="com.piighost.proxy",
+            bin_path=bin_path,
+            vault_dir=vault,
+            cert_path=proxy_dir / "leaf.pem",
+            key_path=proxy_dir / "leaf.key",
+            port=443,
+        )
+        try:
+            svc.install_service(spec)
+            success("Background service installed and started.")
+        except Exception as exc:
+            warn(f"Service install failed: {exc}")
+
+    success("\nStrict mode installed. Verify with: piighost doctor")
 
 
 def _load_config() -> ServiceConfig:
