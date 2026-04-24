@@ -92,8 +92,13 @@ def _load_config(vault_dir: Path) -> ServiceConfig:
     return ServiceConfig()
 
 
-async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
-    config = _load_config(vault_dir)
+async def build_mcp(
+    vault_dir: Path,
+    *,
+    config: ServiceConfig | None = None,
+) -> tuple[FastMCP, PIIGhostService]:
+    if config is None:
+        config = _load_config(vault_dir)
     svc = await PIIGhostService.create(vault_dir=vault_dir, config=config)
     mcp = FastMCP("piighost", "GDPR-compliant PII anonymization and document retrieval")
 
@@ -260,9 +265,27 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
 
     @mcp.resource("piighost://index/status")
     async def index_status_resource() -> str:
-        records = svc._chunk_store.all_records()
-        doc_ids = {r["doc_id"] for r in records}
-        return f"Indexed documents: {len(doc_ids)}\nTotal chunks: {len(records)}"
+        import json as _json
+        try:
+            _status = await svc.index_status(project="default")
+            _state = "ready" if _status.total_docs > 0 else "empty"
+            return _json.dumps({
+                "state": _state,
+                "total_docs": _status.total_docs,
+                "total_chunks": _status.total_chunks,
+                "last_update": getattr(_status, "last_update", None),
+                "errors": list(getattr(_status, "errors", []) or []),
+            })
+        except Exception:
+            _records = svc._chunk_store.all_records()
+            _doc_ids = {r["doc_id"] for r in _records}
+            return _json.dumps({
+                "state": "ready" if _doc_ids else "empty",
+                "total_docs": len(_doc_ids),
+                "total_chunks": len(_records),
+                "last_update": None,
+                "errors": [],
+            })
 
     @mcp.resource("piighost://projects")
     async def projects_resource() -> str:
@@ -330,6 +353,10 @@ async def build_mcp(vault_dir: Path) -> tuple[FastMCP, PIIGhostService]:
     async def bootstrap_client_folder(folder: str) -> dict:
         path = Path(folder).expanduser().resolve()
         project = _slug_for_folder(path)
+        # Ensure HACIENDA_DATA_DIR exists when configured (Cowork plugin needs it).
+        hdata = os.environ.get("HACIENDA_DATA_DIR")
+        if hdata:
+            Path(hdata).mkdir(parents=True, exist_ok=True)
         existing = {p.name for p in await svc.list_projects()}
         if project not in existing:
             await svc.create_project(

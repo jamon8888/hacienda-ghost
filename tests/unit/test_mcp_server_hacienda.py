@@ -18,7 +18,9 @@ class TestResolveProjectForFolder:
             result = await tool.run({"folder": "/home/user/Dossiers/ACME"})
             # FastMCP wraps the return in a Pydantic model; unwrap to dict.
             data = result.structured_content
-            assert data["folder"] == "/home/user/Dossiers/ACME"
+            # Path.resolve() makes the path absolute using the current drive on
+            # Windows (/home/user/... → C:\home\user\...), so compare via Path.
+            assert Path(data["folder"]) == Path("/home/user/Dossiers/ACME").resolve()
             assert data["project"].startswith("acme-")
             assert len(data["project"].rsplit("-", 1)[1]) == 8
         finally:
@@ -100,9 +102,11 @@ class TestSessionAuditTools:
             })
             result = await read.run({"session_id": "s1"})
             events = result.structured_content
-            # FastMCP may wrap list returns under a "result" key — handle both.
+            # session_audit_read returns {session_id, entries, count}; unwrap.
             if isinstance(events, dict) and "result" in events:
                 events = events["result"]
+            if isinstance(events, dict) and "entries" in events:
+                events = events["entries"]
             assert len(events) == 2
             assert events[0]["event"] == "anonymize"
             assert events[1]["event"] == "rehydrate"
