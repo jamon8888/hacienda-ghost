@@ -19,28 +19,37 @@ The downstream consequence: Claude Desktop sends user PII straight to `api.anthr
 
 ## 2. Goal
 
-Intercept and anonymize **every** API request Claude Desktop makes to Anthropic — chat messages, document uploads, batch requests — with a deterministic guarantee that no PII reaches Anthropic when piighost is functioning, and a fail-closed behavior (Desktop cannot reach Anthropic at all) when it isn't.
+Intercept and anonymize **every** API request Claude Desktop makes to Anthropic — chat messages, document uploads, batch requests, tool inputs and tool results — with a deterministic guarantee that no PII reaches Anthropic when piighost is functioning, and a fail-closed behavior (Desktop cannot reach Anthropic at all) when it isn't.
 
 Coverage target:
 
 | Endpoint / payload | Goal |
 |---|---|
-| `POST /v1/messages` (text) | anonymize all text fields |
-| `POST /v1/messages` with `image` content blocks | pass through (non-text, no extractable PII) |
-| `POST /v1/messages` with `document` content blocks (base64 PDF) | extract text, anonymize, repackage |
-| `POST /v1/messages` with `document` content blocks (base64 DOCX/TXT) | extract text, anonymize, repackage |
-| `POST /v1/files` (Files API uploads — PDF/DOCX/TXT) | extract text, anonymize, re-upload |
-| `POST /v1/messages/batches` | anonymize each request in the batch |
-| Streaming SSE responses | rehydrate placeholders back to original text |
+| `POST /v1/messages` text content blocks | anonymize all text fields |
+| `POST /v1/messages` `tool_use.input` (JSON) | anonymize string values inside the structured input |
+| `POST /v1/messages` `tool_result.content` | anonymize text; recurse into nested content blocks |
+| `POST /v1/messages` `image` content blocks | pass through unchanged (see warning below) |
+| `POST /v1/messages` `document` content blocks (base64) | extract text, anonymize, repackage. Formats: PDF, DOCX, XLSX, PPTX, ODT, ODS, TXT (delegated to existing `indexer/ingestor.py:extract_text()`) |
+| `POST /v1/messages` `document` content blocks by `file_id` reference | resolve the file_id to its prior anonymization mapping (see §6.5); no re-extraction needed |
+| `POST /v1/files` uploads | extract text via existing extractor, anonymize, re-upload anonymized bytes; persist `file_id → mapping` binding to the vault |
+| `POST /v1/messages/batches` | anonymize each request in the batch using the same handlers above |
+| Streaming SSE responses | rehydrate placeholders in `text_delta`, `input_json_delta`, and tool_result content back to original PII |
 | Any unknown Anthropic endpoint | **block** (fail-closed; do not pass through) |
+
+> ⚠️ **Image and screenshot caveat — known coverage gap.**
+> Image content blocks pass through the proxy unchanged. If a user attaches a screenshot, scanned ID, or photographed document containing PII, that PII reaches Anthropic. This applies equally to Computer Use screenshots returned in `tool_result`. v1 does not OCR or anonymize image bytes. Surfaced in the install summary, the doctor output, and the system-tray banner so the user is informed.
+
+> ℹ️ **MCP server traffic is out of scope.**
+> Claude Desktop's configured MCP servers run as local processes; their traffic does not reach `api.anthropic.com` and is not affected by this proxy. Anonymization at the MCP boundary is a separate concern handled by the existing piighost MCP server (`src/piighost/mcp/`).
 
 ## 3. Non-goals
 
 - Replacing the existing `light` mode for Claude Code or SDK clients that honor `ANTHROPIC_BASE_URL`. That path stays as-is.
-- Image/audio content inspection (no text PII to extract).
+- Image/audio content inspection or OCR. v2 candidate.
 - Defeating true public-key pinning if Desktop ever introduces it. The diagnostic command will detect pinning and surface a clear failure.
 - Anonymizing model-generated text (the model's output is rehydrated, not anonymized).
 - Generic system-wide HTTPS interception. Scope is per-process, Claude Desktop only.
+- MCP server interception (see §2). MCP traffic is local and does not transit `api.anthropic.com`.
 
 ## 4. Architecture
 
@@ -88,10 +97,11 @@ A new submodule, separate from the existing `src/piighost/proxy/` Starlette app 
 | `__main__.py` | Entry point for `piighost proxy run --mode=forward` — boots mitmproxy with the piighost addon and the existing CA. |
 | `addon.py` | mitmproxy addon class. Implements `request()` and `response()` hooks. Routes by URL to the per-endpoint handlers. |
 | `dispatch.py` | Endpoint dispatcher. Maps `(method, path)` → handler. Unknown Anthropic paths return a `403` to the client. |
-| `handlers/messages.py` | Anonymize `POST /v1/messages` body, rehydrate SSE response. Wraps existing `rewrite_request_body` / `rewrite_sse_stream`. |
-| `handlers/files.py` | Anonymize `POST /v1/files` multipart upload — extract text from PDF/DOCX, anonymize, repackage. |
-| `handlers/batches.py` | Anonymize each request inside `POST /v1/messages/batches`. |
-| `handlers/documents.py` | Shared text extraction for `document` content blocks (base64 PDF/DOCX) — used by both `messages` and `files` handlers. |
+| `handlers/messages.py` | Anonymize `POST /v1/messages` body — text blocks, `tool_use.input` (JSON), `tool_result.content` (recursive). Rehydrate SSE response. Wraps existing `rewrite_request_body` / `rewrite_sse_stream`. |
+| `handlers/tool_blocks.py` | Recursive anonymizer for nested tool_use/tool_result schemas. JSON-aware: walks the structure, anonymizes string leaves only, preserves keys and types. |
+| `handlers/files.py` | Anonymize `POST /v1/files` multipart upload. Delegates extraction to existing `indexer/ingestor.py:extract_text()`. After upload succeeds, persists `file_id → mapping` binding to vault (see §6.5). |
+| `handlers/batches.py` | Anonymize each request inside `POST /v1/messages/batches`. Reuses `messages.py` handler per item. |
+| `handlers/documents.py` | Document content block dispatcher. For inline base64: delegates extraction to existing `indexer/ingestor.py:extract_text()`. For `file_id` references: resolves via `vault.file_bindings.lookup(file_id)`. |
 | `handlers/unknown.py` | Default fail-closed handler: returns `403` with audit-logged "endpoint not in piighost coverage matrix". |
 
 #### `src/piighost/install/desktop_wrapper/` — Claude Desktop launch shim
@@ -110,7 +120,10 @@ A new submodule, separate from the existing `src/piighost/proxy/` Starlette app 
 ### 5.2 Reused (unchanged)
 
 - `src/piighost/anonymizer.py` — anonymization core
-- `src/piighost/pipeline/` — detection / linking / resolution pipeline
+- `src/piighost/pipeline/` — detection / linking / resolution pipeline (including `ThreadAnonymizationPipeline` for cross-message linking)
+- `src/piighost/indexer/ingestor.py` — `extract_text(path)` via kreuzberg. Handles PDF, DOCX, XLSX, PPTX, ODT, ODS, TXT. **The forward proxy MUST reuse this function**; it must not introduce a parallel extractor.
+- `src/piighost/indexer/chunker.py` — used when an extracted document is too large for a single anonymization pass.
+- `src/piighost/vault/` — project-scoped storage. Extended with a new `file_bindings` table (see §6.5).
 - `src/piighost/proxy/upstream.py` — `AnthropicUpstream` HTTP client (used by mitmproxy addon for upstream calls when needed; mitmproxy's own upstream connection is the default path)
 - `src/piighost/proxy/audit.py` — audit log writer
 - `src/piighost/install/ca.py` — CA generation. Leaf cert minting moves to mitmproxy's built-in (which uses our CA).
@@ -131,15 +144,28 @@ A new submodule, separate from the existing `src/piighost/proxy/` Starlette app 
 4. Desktop performs TLS handshake against the leaf cert. Trust store install means Windows trusts the chain. Handshake succeeds.
 5. Desktop sends `POST /v1/messages` (or `/v1/files`, etc.) over the now-decrypted tunnel.
 6. mitmproxy's `request()` hook fires the piighost addon. The dispatcher routes to the matching handler.
-7. The handler anonymizes text fields in-place using `AnonymizationPipeline.anonymize(text, thread_id=...)`. Document blocks are extracted, anonymized, repackaged. Mappings are written to the project vault.
-8. mitmproxy forwards the anonymized request to the real `api.anthropic.com:443` over its own outbound TLS connection.
+7. The handler walks the message structure and anonymizes:
+   - `messages[].content[]` text blocks → `AnonymizationPipeline.anonymize(text, thread_id=...)`
+   - `messages[].content[]` `tool_use.input` → recursive JSON walk via `handlers/tool_blocks.py`; anonymizes string leaves only, preserves keys and types
+   - `messages[].content[]` `tool_result.content` → recurses into nested blocks (text or further structured content)
+   - `messages[].content[]` `document` blocks → extract via `indexer/ingestor.py:extract_text()`, anonymize, repackage as base64
+   - `messages[].content[]` `document` blocks referencing `file_id` → load the binding from `vault.file_bindings`, ensure the mapping is in the thread context (no re-extraction)
+   - `system` field → text anonymization
+8. Mappings are written to the project vault, scoped by `project + thread_id`. Optionally promoted to the project-wide `entity_index` if `--enable-vault-enrichment` is on (§7b).
+9. mitmproxy forwards the anonymized request to the real `api.anthropic.com:443` over its own outbound TLS connection.
 
 ### 6.2 Inbound response (Anthropic → Claude Desktop)
 
 1. Anthropic streams an SSE response.
-2. mitmproxy's `response()` hook fires the piighost addon's SSE rehydrator. Each `text_delta` and `input_json_delta` chunk has placeholders replaced with the user's original PII via the cache-then-entity fallback already used in `rewrite_sse_stream`.
-3. mitmproxy sends the rehydrated stream to Claude Desktop over the original tunnel.
-4. User sees the model's response with their real names, addresses, etc. — never the placeholders.
+2. mitmproxy's `response()` hook fires the piighost addon's SSE rehydrator. Per chunk type:
+   - `content_block_delta` with `text_delta` → placeholder substitution in the text payload
+   - `content_block_delta` with `input_json_delta` → buffered per `content_block_index` until the JSON is parseable, then walked recursively to substitute placeholders in string leaves
+   - `content_block_start` for a `tool_use` block → no rehydration needed (input arrives via deltas)
+   - `content_block_start` for a `tool_result` block (server-sent) → recurse into content blocks
+   - `message_delta` / `message_stop` / `ping` → forwarded unchanged
+3. Substitution uses cache-first lookup (mapping written at request time), with entity-based fallback (re-detect placeholders, look up entity-level mapping) for cases where the cache was evicted.
+4. mitmproxy sends the rehydrated stream to Claude Desktop over the original tunnel.
+5. User sees the model's response with their real names, addresses, etc. — never the placeholders.
 
 ### 6.3 Unknown endpoint
 
@@ -156,6 +182,54 @@ This is the fail-closed core of the design. Adding new endpoints to the coverage
 2. mitmproxy's CONNECT handler checks against piighost's "intercept allowlist" (only `api.anthropic.com`).
 3. Non-allowlisted hosts get a raw TCP tunnel — mitmproxy does NOT terminate TLS. Bytes flow through unmodified.
 4. This means non-API Anthropic hosts (telemetry, updates) work normally with no piighost involvement and no decryption.
+
+### 6.4b Thread and project resolution
+
+Claude Desktop does not send a `thread_id` field in API requests. The proxy must derive one for placeholder linking across messages in the same conversation. Resolution order:
+
+1. **`metadata.user_id`** — if Desktop populates this (it does for some accounts), use it as the thread key. Stable per Desktop install.
+2. **Conversation-state header** — Desktop includes `anthropic-conversation-id` (or equivalent, TBD on inspection of real traffic in §10.3 manual testing) in some flows. Captured if present.
+3. **Hash of the first user message in `messages[]`** — if no other identifier exists, hash the first message's content. Same conversation → same hash → same thread. New conversation → new hash → new thread.
+4. **Fallback**: `"claude-desktop-default"`. This loses cross-message linking but never blocks the request.
+
+The active **project** is derived from the active piighost project (`service.active_project()`), set via `piighost projects use <name>`. Switching project mid-session causes the wrapper to surface a tray notification — placeholder mappings are project-scoped and a switch effectively starts a new isolation boundary.
+
+### 6.5 File-ID lifecycle (Files API)
+
+The Anthropic Files API decouples upload from message use:
+
+```
+Upload:    Client → POST /v1/files (bytes) → returns {"id": "file_abc123"}
+Reference: Client → POST /v1/messages with content block:
+             {"type": "document", "source": {"type": "file", "file_id": "file_abc123"}}
+```
+
+The proxy must keep the anonymization mapping coherent across this two-step flow. New table in the project vault:
+
+```sql
+CREATE TABLE file_bindings (
+    file_id        TEXT PRIMARY KEY,           -- Anthropic file_id
+    project        TEXT NOT NULL,              -- piighost project scope
+    thread_id      TEXT NOT NULL,              -- conversation thread for placeholder reuse
+    mapping_blob   BLOB NOT NULL,              -- serialized anonymization mapping (entity → placeholder)
+    original_sha256 TEXT NOT NULL,             -- detect re-upload of identical content
+    anonymized_sha256 TEXT NOT NULL,           -- what Anthropic actually has
+    uploaded_at    INTEGER NOT NULL,           -- unix epoch
+    expires_at     INTEGER NOT NULL,           -- TTL: 90 days, matches Anthropic file retention
+    UNIQUE(project, original_sha256)           -- dedupe re-uploads of same content
+);
+CREATE INDEX idx_file_bindings_project ON file_bindings(project);
+CREATE INDEX idx_file_bindings_expires ON file_bindings(expires_at);
+```
+
+Lifecycle rules:
+
+1. **Upload (`POST /v1/files`)**: handler extracts text, anonymizes against the active project + thread, uploads anonymized bytes, captures the returned `file_id`, writes a `file_bindings` row.
+2. **Reference (`POST /v1/messages` with `file_id`)**: handler does NOT need to re-anonymize the file (already done at upload). It looks up the binding to ensure the mapping is loaded into the thread context — so when Anthropic's response quotes content from the file, the rehydrator can reverse-map placeholders back to original PII.
+3. **Re-upload of identical content**: dedupe via `original_sha256` lookup; reuse existing `file_id` rather than creating duplicate Anthropic uploads.
+4. **Expiry**: Anthropic retains files for ~90 days. A daemon-side janitor sweeps `file_bindings` where `expires_at < now()`, dropping stale rows and the corresponding mapping data.
+5. **Delete (`DELETE /v1/files/{id}`)**: handler forwards delete to Anthropic and removes the `file_bindings` row.
+6. **Cross-project isolation**: a `file_id` belongs to exactly one project. Attempting to reference it from a different project's session returns `403`.
 
 ## 7. Endpoint coverage matrix and fail-closed dispatch
 
@@ -178,6 +252,18 @@ DEFAULT_HANDLER = UnknownEndpointHandler()  # returns 403, audit-logged
 - New Anthropic endpoints not in the table are **rejected** until explicitly added.
 - A passing CI test asserts the matrix is non-empty and contains all currently-public Anthropic endpoints (test sourced from a lightly-maintained list in the test suite).
 - `piighost doctor --list-coverage` prints the matrix.
+
+## 7b. Optional vault-aware enrichment
+
+Piighost's vault already indexes the user's project content via `indexer/embedder.py`, with a `retriever` that supports BM25 + vector + cross-encoder rerank. The forward proxy can leverage this to make placeholder assignment **stable across sessions**:
+
+1. **At anonymization time**, after the detection pipeline produces an entity, the anonymizer queries `vault.entity_index` for that entity's canonical placeholder (if any).
+2. If a canonical placeholder exists, reuse it. Otherwise mint a new one and write it back to the index.
+3. Net effect: "Patrick Dupont" gets `<<PERSON_42>>` today, tomorrow, and next month — across conversations, file uploads, and re-indexed documents.
+
+Behavior flag: `--enable-vault-enrichment` in `piighost proxy run`, default **on**. Disabling falls back to per-thread mappings only (current behavior).
+
+Trade-off: stable placeholders can be **fingerprintable** if a user shares conversations with Anthropic support and Anthropic correlates `<<PERSON_42>>` across multiple threads. Documented in privacy notes; per-project salt mitigates by varying placeholders between projects.
 
 ## 8. Install / deployment
 
@@ -254,10 +340,14 @@ Restores original shortcuts, removes wrapper, removes firewall rule, removes sch
 ### 10.1 Unit tests
 
 - `tests/proxy/forward/test_dispatch.py` — coverage matrix routing, unknown endpoint rejection.
-- `tests/proxy/forward/test_handlers_messages.py` — `/v1/messages` anonymize/rehydrate round-trip.
-- `tests/proxy/forward/test_handlers_files.py` — multipart PDF upload anonymization.
+- `tests/proxy/forward/test_handlers_messages.py` — `/v1/messages` anonymize/rehydrate round-trip; covers text, tool_use.input, tool_result.content.
+- `tests/proxy/forward/test_handlers_tool_blocks.py` — recursive JSON walk; preserves keys/types, anonymizes string leaves.
+- `tests/proxy/forward/test_handlers_files.py` — multipart PDF/DOCX/XLSX upload anonymization; verifies reuse of `indexer/ingestor.py:extract_text()` (no parallel extractor).
+- `tests/proxy/forward/test_handlers_documents.py` — base64 inline document extract+anonymize+repackage; file_id reference resolution via `vault.file_bindings`.
 - `tests/proxy/forward/test_handlers_batches.py` — batch request anonymization.
 - `tests/proxy/forward/test_handlers_unknown.py` — fail-closed 403 + audit record.
+- `tests/proxy/forward/test_file_bindings.py` — vault binding CRUD; dedupe via `original_sha256`; expiry sweep; cross-project isolation 403.
+- `tests/proxy/forward/test_vault_enrichment.py` — placeholder stability across threads when `--enable-vault-enrichment` is on; per-project salt isolation.
 - `tests/install/test_desktop_wrapper.py` — shortcut replace/restore, firewall rule lifecycle.
 
 ### 10.2 Integration tests
@@ -281,6 +371,9 @@ Restores original shortcuts, removes wrapper, removes firewall rule, removes sch
   - On `piighost self-update`, post-install hook detects `strict` install, prints a migration notice and the recommended command: `piighost install --mode=forward --client=claude-desktop --migrate-from-strict`.
   - The `--migrate-from-strict` flag is a new addition: it removes the hosts-file sentinel block and any prior `strict` artifacts before running the forward-mode install.
   - Hosts-file mode stays available behind `--mode=hosts` (renamed from `strict`) for users who explicitly need it.
+- Vault schema migration:
+  - New `file_bindings` table (§6.5) — additive, no data migration needed. Created on first run of forward-mode proxy.
+  - New `entity_index` table (§7b, only if `--enable-vault-enrichment` is on) — additive. Backfilled lazily as new entities are detected; no upfront migration.
 
 ## 12. Open questions / risks
 
@@ -299,5 +392,10 @@ The design is implemented when:
 - [ ] Sending a request to `POST /v1/wat` (an unknown endpoint) from inside Desktop receives `403` and an audit record exists.
 - [ ] After a Claude Desktop auto-update, the shortcut and firewall rule are re-applied within 5 minutes (scheduled task verified).
 - [ ] Document upload (PDF with synthetic PII) via Desktop's attach-file UI results in an anonymized upload to `/v1/files`, verified by inspecting the upstream-bound payload in mitmproxy's flow log.
+- [ ] After uploading a file, sending a message that references it by `file_id` produces a coherent response: placeholders in the model's quote of the file are rehydrated to the user's original PII.
+- [ ] Re-uploading identical content (same `original_sha256`) reuses the existing `file_id` rather than creating a duplicate Anthropic upload.
+- [ ] Tool-use round-trip: a message that triggers a tool with PII-containing input has the input anonymized in the upstream-bound request; the model's text response that quotes the tool result is rehydrated correctly.
+- [ ] A multi-format extraction smoke test: uploading PDF, DOCX, XLSX, PPTX, ODT, ODS, TXT each produce anonymized upstream payloads. Failure to extract any format does NOT silently pass through the original — it returns 503.
+- [ ] With `--enable-vault-enrichment` on, the same entity ("Patrick Dupont") gets the same placeholder across two distinct conversation threads in the same project.
 - [ ] All unit tests pass on Windows; integration tests pass on WSL.
 - [ ] `piighost uninstall --client=claude-desktop` fully restores the system.
