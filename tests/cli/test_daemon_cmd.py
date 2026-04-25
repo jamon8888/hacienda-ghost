@@ -26,3 +26,26 @@ def test_daemon_start_status_stop(tmp_path: Path, monkeypatch) -> None:
 
     stat2 = runner.invoke(app, ["daemon", "status"], env=env)
     assert json.loads(stat2.stdout.strip())["running"] is False
+
+
+def test_daemon_start_removes_disabled_flag(tmp_path: Path, monkeypatch) -> None:
+    """piighost daemon start must remove daemon.disabled if present.
+
+    Regression: without this, `daemon stop` followed by `daemon start`
+    fails because ensure_daemon raises DaemonDisabled.
+    """
+    from piighost.daemon import lifecycle
+    from piighost.daemon.handshake import DaemonHandshake
+
+    monkeypatch.setenv("PIIGHOST_CWD", str(tmp_path))
+    piighost_dir = tmp_path / ".piighost"
+    piighost_dir.mkdir()
+    (piighost_dir / "daemon.disabled").touch()
+
+    fake_hs = DaemonHandshake(pid=99999, port=51207, token="x", started_at=0)
+    monkeypatch.setattr(lifecycle, "ensure_daemon", lambda *a, **kw: fake_hs)
+
+    runner = CliRunner()
+    r = runner.invoke(app, ["daemon", "start"])
+    assert r.exit_code == 0, r.stdout
+    assert not (piighost_dir / "daemon.disabled").exists()

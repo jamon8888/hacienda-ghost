@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,8 +18,48 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
+from piighost.daemon import reaper
+from piighost.daemon.audit_log import emit
 from piighost.service import PIIGhostService
 from piighost.service.config import ServiceConfig
+
+
+def _make_lifespan(vault_dir: Path, base_lifespan):
+    """Build a Starlette lifespan that wraps *base_lifespan* and runs the
+    reaper every 60s.
+
+    Lifecycle events (daemon_started, reaper_killed, daemon_stopped) are
+    appended to <vault>/daemon.log as JSON lines.
+    """
+    log_path = vault_dir / "daemon.log"
+
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
+        emit(log_path, "daemon_started", port=getattr(app.state, "port", None))
+
+        async def _reaper_loop() -> None:
+            while True:
+                try:
+                    killed = reaper.reap()
+                    if killed:
+                        emit(log_path, "reaper_killed", reaped_pids=killed)
+                except Exception as exc:  # pragma: no cover
+                    emit(log_path, "reaper_error", error=str(exc))
+                await asyncio.sleep(60)
+
+        task = asyncio.create_task(_reaper_loop())
+        try:
+            async with base_lifespan(app):
+                yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            emit(log_path, "daemon_stopped")
+
+    return lifespan
 
 
 def build_app(vault_dir: Path) -> tuple[Starlette, str]:
@@ -32,7 +73,7 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
     shutdown_event = asyncio.Event()
 
     @asynccontextmanager
-    async def lifespan(_: Starlette) -> AsyncIterator[None]:
+    async def _base_lifespan(_: Starlette) -> AsyncIterator[None]:
         state["service"] = await PIIGhostService.create(
             vault_dir=vault_dir, config=config
         )
@@ -51,12 +92,30 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
         if not auth.startswith("Bearer ") or auth[7:] != token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
-        method = body.get("method")
+        method = body.get("method", "")
         params = body.get("params", {}) or {}
+        log_path = vault_dir / "daemon.log"
         svc: PIIGhostService = state["service"]
+        started = time.monotonic()
         try:
             result = await _dispatch(svc, method, params)
+            emit(
+                log_path, "rpc",
+                method=method,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                status="ok",
+            )
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
+            )
         except Exception as exc:  # noqa: BLE001
+            emit(
+                log_path, "rpc",
+                method=method,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                status="error",
+                error=type(exc).__name__,
+            )
             return JSONResponse(
                 {
                     "jsonrpc": "2.0",
@@ -64,9 +123,6 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
                     "error": {"code": -32000, "message": type(exc).__name__},
                 }
             )
-        return JSONResponse(
-            {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
-        )
 
     async def shutdown(request: Request) -> JSONResponse:
         auth = request.headers.get("authorization", "")
@@ -80,7 +136,7 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
         Route("/rpc", rpc, methods=["POST"]),
         Route("/shutdown", shutdown, methods=["POST"]),
     ]
-    app = Starlette(routes=routes, lifespan=lifespan)
+    app = Starlette(routes=routes, lifespan=_make_lifespan(vault_dir, _base_lifespan))
     app.state.shutdown_event = shutdown_event
     return app, token
 

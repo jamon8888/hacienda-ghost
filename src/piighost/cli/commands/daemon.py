@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from piighost.cli.output import ExitCode, emit_error_line, emit_json_line
-from piighost.daemon.lifecycle import ensure_daemon, status, stop_daemon
+from piighost.daemon.lifecycle import ensure_daemon, start_daemon, status, stop_daemon
 from piighost.exceptions import VaultNotFound
 from piighost.vault.discovery import find_vault_dir
 
@@ -37,7 +37,7 @@ def _resolve_or_exit() -> Path:
 @daemon_app.command("start")
 def start_cmd() -> None:
     vault_dir = _resolve_or_exit()
-    hs = ensure_daemon(vault_dir)
+    hs = start_daemon(vault_dir)  # removes daemon.disabled, then ensure_daemon
     emit_json_line(
         {"pid": hs.pid, "port": hs.port, "started_at": hs.started_at}
     )
