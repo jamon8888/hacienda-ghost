@@ -36,6 +36,10 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "typing-extensions>=4.12",
+    "pydantic>=2.0",
+    "portalocker>=3.2.0",
+    "psutil>=7.2.2",
+    "httpx>=0.28",
 ]
 
 [project.urls]
@@ -82,7 +86,7 @@ mcp = [
     "typer>=0.9",
 ]
 index = [
-    "kreuzberg>=4.9.4",
+    "kreuzberg>=4.9.4 ; sys_platform != 'win32'",
     "lancedb>=0.30.2",
     "rank-bm25>=0.2.2",
     "sentence-transformers>=3.0",

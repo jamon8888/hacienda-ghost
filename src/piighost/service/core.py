@@ -38,7 +38,7 @@ from piighost.indexer.cancellation import CancellationToken, CancellationRegistr
 from piighost.service.migration import migrate_to_v3
 from piighost.vault.project_registry import ProjectRegistry, ProjectInfo
 
-_TOKEN_RE = re.compile(r"<[A-Z_]+:[0-9a-f]{8}>")
+_TOKEN_RE = re.compile(r"<<[A-Z_]+:[0-9a-f]{8}>>")
 
 
 class _Detector(Protocol):
