@@ -40,6 +40,7 @@ Paused mode: creating `<vault>/paused` sentinel file disables anonymization with
 Install modes:
 - `light` — generates CA + leaf cert for `localhost`, writes `ANTHROPIC_BASE_URL=https://localhost:8443` to `~/.claude/settings.json`
 - `strict` — same CA for `api.anthropic.com` + edits `/etc/hosts` (sentinel block) + registers background service (launchd / systemd / schtasks)
+- `forward` — mitmproxy-based forward HTTPS proxy for clients that do not honor `ANTHROPIC_BASE_URL` (e.g. Claude Desktop). Client is configured with `HTTPS_PROXY=127.0.0.1:8443`. Coverage matrix in `src/piighost/proxy/forward/dispatch.py`; unknown endpoints fail-closed with HTTP 403. Run with `piighost proxy run --mode=forward`.
 
 Vault: `~/.piighost/` runtime directory — proxy certs at `proxy/`, audit NDJSON at `audit/YYYY-MM/sessions.ndjson`, project DBs at `projects/`
 
@@ -100,7 +101,7 @@ An example LangGraph agent with PII middleware is available in `examples/graph/`
 |---------|---------|
 | `piighost install [--mode=light|strict]` | Install proxy (light: `localhost` cert; strict: hosts-file redirect + service) |
 | `piighost uninstall [--purge-ca] [--purge-vault]` | Reverse install |
-| `piighost proxy run [--port N] [--cert F] [--key F]` | Start HTTPS proxy |
+| `piighost proxy run [--mode=light|forward] [--port N] [--cert F] [--key F]` | Start HTTPS proxy (light: Starlette/uvicorn; forward: mitmproxy CONNECT) |
 | `piighost proxy logs [--tail N]` | Tail audit NDJSON |
 | `piighost doctor [--probe]` | Health check; `--probe` does live DNS + HTTPS interception check |
 | `piighost daemon start/stop/status` | Manage background daemon |
@@ -119,3 +120,5 @@ An example LangGraph agent with PII middleware is available in `examples/graph/`
 - Phase 2 (strict mode) and Phase 3 (Cowork probe) are fully implemented
 - `tests/proxy/test_paused_mode.py` is written but not yet committed — tests the `<vault>/paused` sentinel flag
 - `src/piighost/proxy/server.py` has uncommitted changes
+- **Phase 1 forward proxy** (`feat/forward-proxy-phase1` branch) is complete — mitmproxy-based CONNECT proxy for Claude Desktop; see `src/piighost/proxy/forward/` and plan at `docs/superpowers/plans/2026-04-25-forward-proxy-claude-desktop-phase1.md`
+- Phases 2–5 (full API coverage, vault enrichment, Desktop wrapper, install/doctor) need separate plans
