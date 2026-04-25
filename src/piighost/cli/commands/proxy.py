@@ -29,9 +29,20 @@ def run(
     from piighost.proxy.server import build_app
 
     async def _run() -> None:
+        import logging
         import secrets
 
         from piighost.service.core import PIIGhostService
+
+        # Write uvicorn access + error logs to a persistent file so
+        # the proxy can be debugged even when running as a background service.
+        log_path = vault / "proxy" / "proxy.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(str(log_path), encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+            logging.getLogger(name).addHandler(file_handler)
+
         cfg_path = vault / "config.toml"
         if cfg_path.exists():
             from piighost.service.config import ServiceConfig
