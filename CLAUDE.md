@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PIIGhost is a PII anonymization library for AI agent conversations. It transparently detects, anonymizes, and deanonymizes sensitive entities (names, locations, etc.) using GLiNER2 NER, with built-in LangChain middleware for seamless integration into LangGraph agents.
+PIIGhost (v0.7.0) is a GDPR-compliant PII anonymization system. It ships as both a Python library and a full proxy stack that intercepts LLM API calls (Anthropic), anonymizes PII in-flight, and deanonymizes responses before they reach the user. The proxy is the primary production deployment.
 
 ## Development Commands
 
@@ -13,9 +13,40 @@ uv sync                      # Install dependencies
 make lint                    # Format (ruff), lint (ruff), type-check (pyrefly)
 uv run pytest                # Run all tests
 uv run pytest tests/test_anonymizer.py -k "test_name"  # Run a single test
+
+# Safe on Windows (no model loading):
+uv run pytest tests/proxy tests/unit tests/classifier tests/linker tests/ph_factory tests/resolver tests/vault
+
+# Install tests (skip OS-level side-effects):
+PIIGHOST_SKIP_TRUSTSTORE=1 PIIGHOST_SKIP_SERVICE=1 uv run pytest tests/install
 ```
 
+## Windows Quirks
+
+- Two venvs: `.venv` (Python 3.12, default), `.venv2` (Python 3.13)
+- `conftest.py` auto-skips `tests/cli`, `tests/service`, `tests/benchmarks`, `tests/e2e`, `tests/daemon`, `tests/integrations`, `tests/pipeline`, `tests/detector`, `tests/scripts` on win32 — torch/sentence-transformers cause segfaults when loading model weights
+- Proxy tests and unit tests are safe to run on Windows
+
 ## Architecture
+
+### Proxy Stack (primary deployment)
+
+`AnthropicUpstream` ← `build_app()` (Starlette) ← `piighost proxy run`
+
+Routes: `GET /health`, `GET /piighost-probe` (unauthenticated interception check), `POST /v1/messages` (anonymize → forward → deanonymize), `/{path}` catch-all passthrough
+
+Paused mode: creating `<vault>/paused` sentinel file disables anonymization without stopping the proxy. `piighost on/off` creates/removes this file.
+
+Install modes:
+- `light` — generates CA + leaf cert for `localhost`, writes `ANTHROPIC_BASE_URL=https://localhost:8443` to `~/.claude/settings.json`
+- `strict` — same CA for `api.anthropic.com` + edits `/etc/hosts` (sentinel block) + registers background service (launchd / systemd / schtasks)
+
+Vault: `~/.piighost/` runtime directory — proxy certs at `proxy/`, audit NDJSON at `audit/YYYY-MM/sessions.ndjson`, project DBs at `projects/`
+
+Environment variables for testing:
+- `PIIGHOST_SKIP_TRUSTSTORE=1` — skip OS trust store install
+- `PIIGHOST_SKIP_SERVICE=1` — skip background service registration
+- `PIIGHOST_DETECTOR=stub` — stub detector (no GLiNER2 load), used by proxy test fixtures
 
 ### 5-Stage Anonymization Pipeline
 
@@ -54,9 +85,37 @@ All pipeline stages use **protocols** (structural subtyping) for dependency inje
 - **Type checking**: PyReFly (not mypy)
 - **Formatting/linting**: Ruff
 - **Package manager**: uv (not pip)
-- **Python**: 3.12+
+- **Python**: 3.12+ (3.10–3.14 in classifiers)
 - **Data models**: Frozen dataclasses for immutability (`Entity`, `Detection`, `Span`)
+- **Proxy test fixtures**: `stub_vault` fixture in `tests/proxy/conftest.py` sets `PIIGHOST_DETECTOR=stub` and creates a minimal vault in `tmp_path`
+- **Docs**: bilingual (EN + FR) via zensical — `make docs-watch` / `make docs-watch-fr`
 
 ## Example Application
 
 An example LangGraph agent with PII middleware is available in `examples/graph/`. It includes Aegra deployment, FastAPI HTTP server, PostgreSQL, and Langfuse observability. See `examples/graph/README.md` for details.
+
+## CLI Commands
+
+| Command | Purpose |
+|---------|---------|
+| `piighost install [--mode=light|strict]` | Install proxy (light: `localhost` cert; strict: hosts-file redirect + service) |
+| `piighost uninstall [--purge-ca] [--purge-vault]` | Reverse install |
+| `piighost proxy run [--port N] [--cert F] [--key F]` | Start HTTPS proxy |
+| `piighost proxy logs [--tail N]` | Tail audit NDJSON |
+| `piighost doctor [--probe]` | Health check; `--probe` does live DNS + HTTPS interception check |
+| `piighost daemon start/stop/status` | Manage background daemon |
+| `piighost index <path>` | Index documents into vault |
+| `piighost query <text>` | RAG query against vault |
+| `piighost vault list/search/stats` | Manage vault contents |
+| `piighost projects list/create/delete` | Multi-project management |
+| `piighost self-update` | Update piighost binary |
+
+## Docker
+
+`make up` starts the workstation profile (port-forwarded). `make up-server` for headless. `make up-sovereign` adds embedder + LLM stack. Secrets go in `docker/secrets/`.
+
+## Ongoing Work (as of 2026-04-25)
+
+- Phase 2 (strict mode) and Phase 3 (Cowork probe) are fully implemented
+- `tests/proxy/test_paused_mode.py` is written but not yet committed — tests the `<vault>/paused` sentinel flag
+- `src/piighost/proxy/server.py` has uncommitted changes
