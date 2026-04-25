@@ -76,6 +76,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
     Each tool has an explicit signature matching its daemon RPC method,
     so MCP clients see the right parameter schema.
     """
+    auth_token = token  # rename for use in tool closures so MCP-tool params named `token` don't shadow it
     mcp = FastMCP("piighost")
     by_name = {s.name: s for s in TOOL_CATALOG}
 
@@ -88,7 +89,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["anonymize_text"],
             params={"text": text, "doc_id": doc_id, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="rehydrate_text", description=by_name["rehydrate_text"].description)
@@ -96,7 +97,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["rehydrate_text"],
             params={"text": text, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="detect", description=by_name["detect"].description)
@@ -104,7 +105,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["detect"],
             params={"text": text, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     # ------------------------------------------------------------------
@@ -128,7 +129,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
                 "reveal": reveal,
                 "project": project,
             },
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="vault_show", description=by_name["vault_show"].description)
@@ -138,7 +139,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["vault_show"],
             params={"token": token, "reveal": reveal, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="vault_stats", description=by_name["vault_stats"].description)
@@ -146,7 +147,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["vault_stats"],
             params={"project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="vault_search", description=by_name["vault_search"].description)
@@ -156,7 +157,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["vault_search"],
             params={"query": query, "reveal": reveal, "limit": limit, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     # ------------------------------------------------------------------
@@ -173,7 +174,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["index_path"],
             params={"path": path, "recursive": recursive, "force": force, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="remove_doc", description=by_name["remove_doc"].description)
@@ -181,7 +182,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["remove_doc"],
             params={"path": path, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="index_status", description=by_name["index_status"].description)
@@ -191,7 +192,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["index_status"],
             params={"limit": limit, "offset": offset, "project": project},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="query", description=by_name["query"].description)
@@ -204,18 +205,22 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         rerank: bool = False,
         top_n: int = 20,
     ) -> dict:
+        params: dict = {
+            "text": text,
+            "k": k,
+            "project": project,
+            "rerank": rerank,
+            "top_n": top_n,
+        }
+        if filter_prefix or filter_doc_ids:
+            params["filter"] = {
+                "file_path_prefix": filter_prefix or None,
+                "doc_ids": list(filter_doc_ids) if filter_doc_ids else [],
+            }
         return await dispatch(
             by_name["query"],
-            params={
-                "text": text,
-                "k": k,
-                "project": project,
-                "filter_prefix": filter_prefix,
-                "filter_doc_ids": filter_doc_ids,
-                "rerank": rerank,
-                "top_n": top_n,
-            },
-            base_url=base_url, token=token,
+            params=params,
+            base_url=base_url, token=auth_token,
         )
 
     # ------------------------------------------------------------------
@@ -227,7 +232,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["list_projects"],
             params={},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="create_project", description=by_name["create_project"].description)
@@ -235,7 +240,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["create_project"],
             params={"name": name, "description": description},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     @mcp.tool(name="delete_project", description=by_name["delete_project"].description)
@@ -243,7 +248,7 @@ def _build_mcp(*, base_url: str, token: str) -> FastMCP:
         return await dispatch(
             by_name["delete_project"],
             params={"name": name, "force": force},
-            base_url=base_url, token=token,
+            base_url=base_url, token=auth_token,
         )
 
     return mcp

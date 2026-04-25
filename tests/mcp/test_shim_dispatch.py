@@ -114,3 +114,74 @@ async def test_each_tool_has_explicit_kwargs(monkeypatch) -> None:
         assert "params" not in props or len(props) > 1, (
             f"{tool.name} accepts a generic `params: dict` instead of explicit kwargs"
         )
+
+
+@pytest.mark.asyncio
+async def test_vault_show_uses_daemon_auth_token_not_param() -> None:
+    """Regression: vault_show accepts a `token` parameter (vault placeholder).
+    That must NOT be sent as the Authorization bearer — the daemon's
+    bearer token from the closure must be used."""
+    captured: dict = {}
+
+    def _h(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers.get("authorization")
+        body = json.loads(request.content)
+        captured["params"] = body["params"]
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {}})
+
+    from piighost.mcp.shim import _build_mcp
+    import httpx as _httpx
+    transport = _httpx.MockTransport(_h)
+
+    # Patch httpx.AsyncClient to use our transport
+    import piighost.mcp.shim as shim
+    original = _httpx.AsyncClient
+    def _make_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+    import unittest.mock
+    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client):
+        mcp = _build_mcp(base_url="http://x", token="DAEMON_BEARER")
+        vault_show_tool = await mcp.get_tool("vault_show")
+        # Invoke with a vault placeholder as the `token` param
+        await vault_show_tool.fn(token="<PERSON:abc>", reveal=False, project="default")
+
+    assert captured["auth"] == "Bearer DAEMON_BEARER", (
+        f"vault_show sent wrong auth header: {captured['auth']!r}"
+    )
+    assert captured["params"]["token"] == "<PERSON:abc>"
+
+
+@pytest.mark.asyncio
+async def test_query_sends_nested_filter_to_daemon() -> None:
+    """Regression: shim must wrap filter_prefix/filter_doc_ids in a nested
+    `filter` object that matches the daemon's reader."""
+    captured: dict = {}
+
+    def _h(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        captured["params"] = body["params"]
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"hits": []}})
+
+    from piighost.mcp.shim import _build_mcp
+    import httpx as _httpx
+    transport = _httpx.MockTransport(_h)
+    import unittest.mock
+    original = _httpx.AsyncClient
+    def _make_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client):
+        mcp = _build_mcp(base_url="http://x", token="t")
+        query_tool = await mcp.get_tool("query")
+        await query_tool.fn(
+            text="hi",
+            filter_prefix="docs/",
+            filter_doc_ids=["doc1", "doc2"],
+        )
+
+    assert "filter" in captured["params"], "shim must nest filter, not flatten"
+    assert captured["params"]["filter"]["file_path_prefix"] == "docs/"
+    assert captured["params"]["filter"]["doc_ids"] == ["doc1", "doc2"]
+    assert "filter_prefix" not in captured["params"]
+    assert "filter_doc_ids" not in captured["params"]
