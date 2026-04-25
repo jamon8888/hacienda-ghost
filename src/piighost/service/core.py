@@ -14,7 +14,7 @@ from piighost.exceptions import PIISafetyViolation
 from piighost.indexer.filters import QueryFilter
 from piighost.models import Detection, Entity
 from piighost.pipeline.base import AnonymizationPipeline
-from piighost.placeholder import HashPlaceholderFactory
+from piighost.placeholder import LabelHashPlaceholderFactory
 from piighost.service.config import ServiceConfig
 from piighost.service.errors import AnonymizationFailed
 from piighost.service.models import (
@@ -56,7 +56,7 @@ class _ProjectService:
         vault: Vault,
         audit: AuditLogger,
         detector: _Detector,
-        ph_factory: HashPlaceholderFactory,
+        ph_factory: LabelHashPlaceholderFactory,
         reranker=None,
     ) -> None:
         self._project_dir = project_dir
@@ -111,7 +111,7 @@ class _ProjectService:
             vault=vault,
             audit=audit,
             detector=detector,
-            ph_factory=HashPlaceholderFactory(salt=placeholder_salt),
+            ph_factory=LabelHashPlaceholderFactory(),
             reranker=reranker,
         )
 
