@@ -33,5 +33,18 @@ class AnthropicUpstream:
         req = self._client.build_request("POST", path, json=json, headers=headers)
         return await self._client.send(req, stream=True)
 
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: str | None = None,
+        content: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        url = path + (f"?{params}" if params else "")
+        req = self._client.build_request(method, url, content=content, headers=headers)
+        return await self._client.send(req, stream=True)
+
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -70,7 +70,11 @@ def build_app(
         headers = {
             k: v
             for k, v in request.headers.items()
-            if k.lower() in {"authorization", "anthropic-version", "anthropic-beta", "content-type"}
+            if k.lower() in {
+                "authorization", "x-api-key",
+                "anthropic-version", "anthropic-beta",
+                "content-type",
+            }
         }
 
         started = time.monotonic()
@@ -112,6 +116,41 @@ def build_app(
             media_type=upstream_resp.headers.get("content-type", "text/event-stream"),
         )
 
+    async def passthrough(request: Request) -> StreamingResponse | JSONResponse:
+        """Forward any unrecognised path directly to the upstream without anonymization."""
+        _PASSTHROUGH_HEADERS = {
+            "authorization", "x-api-key", "anthropic-version",
+            "anthropic-beta", "content-type", "accept", "user-agent",
+        }
+        fwd_headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() in _PASSTHROUGH_HEADERS
+        }
+        body = await request.body()
+        try:
+            resp = await upstream.request(
+                method=request.method,
+                path=request.url.path,
+                params=str(request.url.query) if request.url.query else None,
+                content=body or None,
+                headers=fwd_headers,
+            )
+        except Exception as exc:
+            return JSONResponse({"error": f"upstream unreachable: {exc}"}, status_code=502)
+
+        async def _iter() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+            finally:
+                await resp.aclose()
+
+        return StreamingResponse(
+            _iter(),
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+
     @asynccontextmanager
     async def _lifespan(app_: Starlette):
         yield
@@ -123,5 +162,6 @@ def build_app(
             Route("/health", health, methods=["GET"]),
             Route("/piighost-probe", probe, methods=["GET"]),
             Route("/v1/messages", messages, methods=["POST"]),
+            Route("/{path:path}", passthrough, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]),
         ]
     )
