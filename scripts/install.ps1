@@ -35,7 +35,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 # 2. Stop any running piighost service before (re)install
 # ---------------------------------------------------------------------------
 Write-Host "[2/4] Stopping existing piighost service (if any)..." -ForegroundColor Yellow
-& "$env:SystemRoot\System32\schtasks.exe" /end /tn "piighost-proxy" 2>$null | Out-Null
+try { & "$env:SystemRoot\System32\schtasks.exe" /end /tn "piighost-proxy" 2>$null | Out-Null } catch {}
 Get-Process -Name "python" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like "*uvicorn*piighost*" } |
     Stop-Process -Force -ErrorAction SilentlyContinue
