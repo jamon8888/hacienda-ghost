@@ -137,6 +137,23 @@ class _BypassHostsBackend(httpcore.AsyncNetworkBackend):
         await self._inner.sleep(seconds)
 
 
+class _DirectIPTransport(httpx.AsyncHTTPTransport):
+    """httpx transport that connects to a fixed IP, bypassing OS DNS.
+
+    httpx.AsyncHTTPTransport doesn't expose network_backend in its public
+    __init__, so we create the parent with defaults then replace _pool with
+    an httpcore.AsyncConnectionPool that uses our custom backend.
+    """
+
+    def __init__(self, real_ip: str) -> None:
+        import ssl as _ssl
+        super().__init__()
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=_ssl.create_default_context(),
+            network_backend=_BypassHostsBackend(real_ip),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Public upstream client
 # ---------------------------------------------------------------------------
@@ -155,9 +172,7 @@ class AnthropicUpstream:
             target_host = base_url.split("//", 1)[-1].split("/")[0].split(":")[0]
             real_ip = _resolve_real_ip(target_host)
             if real_ip is not None:
-                transport = httpx.AsyncHTTPTransport(
-                    network_backend=_BypassHostsBackend(real_ip)
-                )
+                transport = _DirectIPTransport(real_ip)
 
         self._client = httpx.AsyncClient(
             base_url=base_url,
