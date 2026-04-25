@@ -17,7 +17,7 @@ from piighost.proxy.forward.addon import PiighostAddon
 from piighost.proxy.forward.dispatch import build_default_dispatcher
 
 
-def _build_service(vault_dir: Path):
+async def _build_service(vault_dir: Path):
     """Construct the anonymization service the handlers depend on.
 
     Reuses the same service factory that light-mode wires up.
@@ -25,11 +25,11 @@ def _build_service(vault_dir: Path):
     """
     from piighost.service.core import PIIGhostService
 
-    return asyncio.run(PIIGhostService.create(vault_dir=vault_dir))
+    return await PIIGhostService.create(vault_dir=vault_dir)
 
 
-def build_addon(*, vault_dir: Path) -> PiighostAddon:
-    service = _build_service(vault_dir)
+async def build_addon(*, vault_dir: Path) -> PiighostAddon:
+    service = await _build_service(vault_dir)
     audit = AuditWriter(root=vault_dir / "audit")
     dispatcher = build_default_dispatcher(service=service, audit=audit)
     return PiighostAddon(dispatcher=dispatcher)
@@ -65,7 +65,7 @@ async def _serve(args: argparse.Namespace) -> int:
         ],
     )
     master = DumpMaster(opts)
-    master.addons.add(build_addon(vault_dir=args.vault_dir))
+    master.addons.add(await build_addon(vault_dir=args.vault_dir))
     try:
         await master.run()
     except KeyboardInterrupt:

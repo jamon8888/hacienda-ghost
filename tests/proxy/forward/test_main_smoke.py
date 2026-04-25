@@ -14,12 +14,13 @@ import pytest
 from piighost.proxy.forward.__main__ import build_addon
 
 
-def test_build_addon_returns_addon(tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_build_addon_returns_addon(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
     vault_dir = tmp_path / "vault"
     vault_dir.mkdir()
 
-    addon = build_addon(vault_dir=vault_dir)
+    addon = await build_addon(vault_dir=vault_dir)
 
     assert addon is not None
     assert hasattr(addon, "request")
