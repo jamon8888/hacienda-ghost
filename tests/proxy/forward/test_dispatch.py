@@ -1,4 +1,5 @@
 """Tests for coverage-matrix routing in the forward-proxy dispatcher."""
+
 from __future__ import annotations
 
 from piighost.proxy.forward.dispatch import (
@@ -12,7 +13,9 @@ from piighost.proxy.forward.handlers.unknown import UnknownEndpointHandler
 def test_known_method_path_returns_matching_handler():
     h = PassthroughHandler()
     matrix: CoverageMatrix = {("GET", "/v1/models"): h}
-    dispatcher = Dispatcher(matrix=matrix, default=UnknownEndpointHandler(audit_writer=None))
+    dispatcher = Dispatcher(
+        matrix=matrix, default=UnknownEndpointHandler(audit_writer=None)
+    )
 
     result = dispatcher.dispatch(method="GET", path="/v1/models")
 
@@ -32,9 +35,13 @@ def test_unknown_method_path_returns_default_handler():
 def test_path_with_trailing_query_string_is_normalized():
     h = PassthroughHandler()
     matrix: CoverageMatrix = {("GET", "/v1/models"): h}
-    dispatcher = Dispatcher(matrix=matrix, default=UnknownEndpointHandler(audit_writer=None))
+    dispatcher = Dispatcher(
+        matrix=matrix, default=UnknownEndpointHandler(audit_writer=None)
+    )
 
-    result = dispatcher.dispatch(method="GET", path="/v1/models?include_deprecated=true")
+    result = dispatcher.dispatch(
+        method="GET", path="/v1/models?include_deprecated=true"
+    )
 
     assert result is h
 
@@ -42,7 +49,9 @@ def test_path_with_trailing_query_string_is_normalized():
 def test_method_is_case_insensitive():
     h = PassthroughHandler()
     matrix: CoverageMatrix = {("GET", "/v1/models"): h}
-    dispatcher = Dispatcher(matrix=matrix, default=UnknownEndpointHandler(audit_writer=None))
+    dispatcher = Dispatcher(
+        matrix=matrix, default=UnknownEndpointHandler(audit_writer=None)
+    )
 
     result = dispatcher.dispatch(method="get", path="/v1/models")
 
@@ -53,7 +62,9 @@ def test_id_path_segments_match_with_pattern():
     """`/v1/files/{id}` in matrix should match `/v1/files/file_abc123`."""
     h = PassthroughHandler()
     matrix: CoverageMatrix = {("GET", "/v1/files/{id}"): h}
-    dispatcher = Dispatcher(matrix=matrix, default=UnknownEndpointHandler(audit_writer=None))
+    dispatcher = Dispatcher(
+        matrix=matrix, default=UnknownEndpointHandler(audit_writer=None)
+    )
 
     result = dispatcher.dispatch(method="GET", path="/v1/files/file_abc123")
 

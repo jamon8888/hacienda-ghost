@@ -1,4 +1,5 @@
 """CLI test: `piighost proxy run --mode=forward` calls forward main."""
+
 from __future__ import annotations
 
 from unittest.mock import patch

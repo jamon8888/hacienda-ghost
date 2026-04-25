@@ -5,6 +5,7 @@ combinations are flaky on Win32). Run on WSL Ubuntu:
 
     wsl bash -c "cd /mnt/c/Users/NMarchitecte/Documents/piighost && uv run pytest tests/proxy/forward/test_e2e.py -v"
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +15,6 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
 import pytest
 from starlette.applications import Starlette
 from starlette.responses import StreamingResponse
@@ -40,13 +40,15 @@ async def _capturing_messages(request):
     _Capture.received = body
     user_text = body["messages"][0]["content"][0]["text"]
     sse = (
-        b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
+        b'event: message_start\ndata: {"type":"message_start"}\n\n'
         b"event: content_block_delta\ndata: "
-        + json.dumps({
-            "type": "content_block_delta",
-            "delta": {"type": "text_delta", "text": f"echo: {user_text}"},
-        }).encode("utf-8")
-        + b"\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        + json.dumps(
+            {
+                "type": "content_block_delta",
+                "delta": {"type": "text_delta", "text": f"echo: {user_text}"},
+            }
+        ).encode("utf-8")
+        + b'\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'
     )
 
     async def gen():
@@ -60,7 +62,9 @@ async def _fake_upstream():
     """Run a Starlette server impersonating api.anthropic.com on a random port."""
     import uvicorn
 
-    app = Starlette(routes=[Route("/v1/messages", _capturing_messages, methods=["POST"])])
+    app = Starlette(
+        routes=[Route("/v1/messages", _capturing_messages, methods=["POST"])]
+    )
     port = _free_port()
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
     server = uvicorn.Server(config)
@@ -80,7 +84,6 @@ async def test_forward_proxy_round_trip(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PIIGHOST_DETECTOR", "stub")
     vault_dir = tmp_path / "vault"
     (vault_dir / "audit").mkdir(parents=True)
-    proxy_port = _free_port()
 
     # Locate the CA helper — import dynamically so the test fails
     # cleanly if the CA module hasn't been implemented yet.
@@ -92,8 +95,8 @@ async def test_forward_proxy_round_trip(tmp_path: Path, monkeypatch):
     ca_path = vault_dir / "ca.pem"
     generate_ca(ca_path)
 
-    async with _fake_upstream() as upstream_port:
-        from piighost.proxy.forward.__main__ import _serve, build_addon
+    async with _fake_upstream():
+        from piighost.proxy.forward.__main__ import build_addon
 
         addon = await build_addon(vault_dir=vault_dir)
 
@@ -111,15 +114,23 @@ async def test_forward_proxy_round_trip(tmp_path: Path, monkeypatch):
 
         # Build a mock flow that simulates what mitmproxy would pass to the addon
         from unittest.mock import MagicMock
+
         flow = MagicMock()
         flow.request.method = "POST"
         flow.request.path = "/v1/messages"
         flow.request.host = "api.anthropic.com"
         flow.request.pretty_host = "api.anthropic.com"
-        flow.request.content = json.dumps({
-            "model": "claude-opus-4-7",
-            "messages": [{"role": "user", "content": [{"type": "text", "text": "Hello PATRICK"}]}],
-        }).encode("utf-8")
+        flow.request.content = json.dumps(
+            {
+                "model": "claude-opus-4-7",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Hello PATRICK"}],
+                    }
+                ],
+            }
+        ).encode("utf-8")
         flow.request.headers = {"content-type": "application/json"}
         flow.response = None
 
@@ -131,24 +142,30 @@ async def test_forward_proxy_round_trip(tmp_path: Path, monkeypatch):
         request_body = json.loads(flow.request.content)
         user_text = request_body["messages"][0]["content"][0]["text"]
         assert "PATRICK" not in user_text, f"PII leaked to upstream: {user_text!r}"
-        assert "<<" in user_text and ">>" in user_text, f"No placeholder in: {user_text!r}"
+        assert "<<" in user_text and ">>" in user_text, (
+            f"No placeholder in: {user_text!r}"
+        )
 
         # Phase 1: test response-side rehydration (SSE text_delta)
         placeholder = user_text  # whatever the stub produced
         flow.response = MagicMock()
         flow.response.headers = {"content-type": "text/event-stream"}
         flow.response.content = (
-            b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
+            b'event: message_start\ndata: {"type":"message_start"}\n\n'
             + b"event: content_block_delta\ndata: "
-            + json.dumps({
-                "type": "content_block_delta",
-                "delta": {"type": "text_delta", "text": f"echo: {placeholder}"},
-            }).encode("utf-8")
-            + b"\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+            + json.dumps(
+                {
+                    "type": "content_block_delta",
+                    "delta": {"type": "text_delta", "text": f"echo: {placeholder}"},
+                }
+            ).encode("utf-8")
+            + b'\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n'
         )
 
         await addon.response(flow)
 
         rebuilt = flow.response.content
         assert b"PATRICK" in rebuilt, "Placeholder was not rehydrated in response"
-        assert placeholder.encode() not in rebuilt, "Placeholder still present after rehydration"
+        assert placeholder.encode() not in rebuilt, (
+            "Placeholder still present after rehydration"
+        )

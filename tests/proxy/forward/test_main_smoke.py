@@ -5,6 +5,7 @@ test_e2e.py. This test only validates wiring: anonymization service
 construction, dispatcher build, addon instantiation, and CA path
 resolution.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

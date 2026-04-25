@@ -1,4 +1,5 @@
 """Anonymize POST /v1/messages requests and rehydrate streamed responses."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,9 @@ if TYPE_CHECKING:
 
 
 class _Service(Protocol):
-    async def anonymize(self, text: str, *, project: str) -> tuple[str, dict[str, Any]]: ...
+    async def anonymize(
+        self, text: str, *, project: str
+    ) -> tuple[str, dict[str, Any]]: ...
     async def rehydrate(self, text: str, *, project: str) -> str: ...
     async def active_project(self) -> str: ...
 
@@ -27,7 +30,7 @@ class MessagesHandler(Handler):
 
     async def handle_request(self, flow: "HTTPFlow") -> None:
         try:
-            body = json.loads(flow.request.content)
+            body = json.loads(flow.request.content or b"")
         except (TypeError, json.JSONDecodeError):
             flow.response = Response.make(
                 400,
@@ -43,10 +46,12 @@ class MessagesHandler(Handler):
         except Exception as exc:
             flow.response = Response.make(
                 503,
-                json.dumps({
-                    "error": f"piighost: anonymization failed: {exc}",
-                    "type": "piighost_unavailable",
-                }).encode("utf-8"),
+                json.dumps(
+                    {
+                        "error": f"piighost: anonymization failed: {exc}",
+                        "type": "piighost_unavailable",
+                    }
+                ).encode("utf-8"),
                 {"content-type": "application/json"},
             )
             return
@@ -63,7 +68,7 @@ class MessagesHandler(Handler):
         try:
             project = await self._service.active_project()
             flow.response.content = await self._rehydrate_sse(
-                flow.response.content, project=project
+                flow.response.content or b"", project=project
             )
         except Exception:
             return  # rehydration unavailable; placeholders remain but no PII is leaked
@@ -92,12 +97,16 @@ class MessagesHandler(Handler):
         for msg in messages:
             content = msg.get("content")
             if isinstance(content, str):
-                msg["content"], _ = await self._service.anonymize(content, project=project)
+                msg["content"], _ = await self._service.anonymize(
+                    content, project=project
+                )
             elif isinstance(content, list):
                 for block in content:
                     if isinstance(block, dict) and block.get("type") == "text":
                         text = block.get("text", "")
-                        block["text"], _ = await self._service.anonymize(text, project=project)
+                        block["text"], _ = await self._service.anonymize(
+                            text, project=project
+                        )
                     # image / document / tool_use / tool_result handled in Phase 2
 
     async def _anonymize_system(self, body: dict, *, project: str) -> None:
@@ -108,4 +117,6 @@ class MessagesHandler(Handler):
             for block in system:
                 if isinstance(block, dict) and block.get("type") == "text":
                     text = block.get("text", "")
-                    block["text"], _ = await self._service.anonymize(text, project=project)
+                    block["text"], _ = await self._service.anonymize(
+                        text, project=project
+                    )

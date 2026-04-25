@@ -1,4 +1,5 @@
 """Tests for MessagesHandler text and system field anonymization."""
+
 from __future__ import annotations
 
 import json
@@ -23,15 +24,17 @@ def _make_request_flow(body: dict) -> MagicMock:
 @pytest.mark.asyncio
 async def test_anonymizes_text_content_block(stub_service):
     handler = MessagesHandler(service=stub_service)
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": "Hello PATRICK"}],
-            }
-        ],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Hello PATRICK"}],
+                }
+            ],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -42,10 +45,12 @@ async def test_anonymizes_text_content_block(stub_service):
 @pytest.mark.asyncio
 async def test_anonymizes_string_content_shorthand(stub_service):
     handler = MessagesHandler(service=stub_service)
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "messages": [{"role": "user", "content": "Hello PATRICK"}],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "messages": [{"role": "user", "content": "Hello PATRICK"}],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -56,11 +61,13 @@ async def test_anonymizes_string_content_shorthand(stub_service):
 @pytest.mark.asyncio
 async def test_anonymizes_system_field_string(stub_service):
     handler = MessagesHandler(service=stub_service)
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "system": "You are PATRICK's assistant",
-        "messages": [{"role": "user", "content": "hi"}],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "system": "You are PATRICK's assistant",
+            "messages": [{"role": "user", "content": "hi"}],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -71,11 +78,13 @@ async def test_anonymizes_system_field_string(stub_service):
 @pytest.mark.asyncio
 async def test_anonymizes_system_field_blocks(stub_service):
     handler = MessagesHandler(service=stub_service)
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "system": [{"type": "text", "text": "Assist PATRICK"}],
-        "messages": [{"role": "user", "content": "hi"}],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "system": [{"type": "text", "text": "Assist PATRICK"}],
+            "messages": [{"role": "user", "content": "hi"}],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -86,15 +95,22 @@ async def test_anonymizes_system_field_blocks(stub_service):
 @pytest.mark.asyncio
 async def test_passes_through_image_content_block_untouched(stub_service):
     handler = MessagesHandler(service=stub_service)
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "messages": [
-            {
-                "role": "user",
-                "content": [{"type": "image", "source": {"type": "base64", "data": "aGVsbG8="}}],
-            }
-        ],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {"type": "base64", "data": "aGVsbG8="},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -128,10 +144,12 @@ async def test_anonymization_failure_returns_503_no_upstream(stub_service):
             raise RuntimeError("GLiNER2 OOM")
 
     handler = MessagesHandler(service=Boom())
-    flow = _make_request_flow({
-        "model": "claude-opus-4-7",
-        "messages": [{"role": "user", "content": "Hello PATRICK"}],
-    })
+    flow = _make_request_flow(
+        {
+            "model": "claude-opus-4-7",
+            "messages": [{"role": "user", "content": "Hello PATRICK"}],
+        }
+    )
 
     await handler.handle_request(flow)
 
@@ -148,10 +166,10 @@ async def test_rehydrates_text_delta_in_sse_response(stub_service):
     flow.response = MagicMock()
     flow.response.headers = {"content-type": "text/event-stream"}
     flow.response.content = (
-        b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
-        b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-        b"\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello <<PERSON_1>>\"}}\n\n"
-        b"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        b'event: message_start\ndata: {"type":"message_start"}\n\n'
+        b'event: content_block_delta\ndata: {"type":"content_block_delta",'
+        b'"delta":{"type":"text_delta","text":"Hello <<PERSON_1>>"}}\n\n'
+        b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
     )
 
     await handler.handle_response(flow)

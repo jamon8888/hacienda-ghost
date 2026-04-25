@@ -1,4 +1,5 @@
 """No-op handler for endpoints that carry no PII (e.g., /v1/models)."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

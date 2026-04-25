@@ -1,4 +1,5 @@
 """Tests for the no-op passthrough handler used for /v1/models etc."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

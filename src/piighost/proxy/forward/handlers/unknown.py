@@ -1,4 +1,5 @@
 """Fail-closed handler for endpoints not in the coverage matrix."""
+
 from __future__ import annotations
 
 import json

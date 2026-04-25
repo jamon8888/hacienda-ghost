@@ -1,4 +1,5 @@
 """Tests for the mitmproxy addon dispatch glue."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +11,9 @@ from piighost.proxy.forward.dispatch import Dispatcher
 from piighost.proxy.forward.handlers.passthrough import PassthroughHandler
 
 
-def _flow(host: str = "api.anthropic.com", method: str = "GET", path: str = "/v1/models"):
+def _flow(
+    host: str = "api.anthropic.com", method: str = "GET", path: str = "/v1/models"
+):
     flow = MagicMock()
     flow.request.host = host
     flow.request.pretty_host = host

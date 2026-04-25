@@ -1,4 +1,5 @@
 """Shared fixtures for forward-proxy tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,7 +25,11 @@ class StubAnonymizationService:
     async def anonymize(self, text: str, *, project: str) -> tuple[str, dict[str, Any]]:
         self.calls_anonymize.append(text)
         replaced = text.replace(self.PII, self.PLACEHOLDER)
-        meta = {"entities": [{"text": self.PII, "label": "PERSON"}] if self.PII in text else []}
+        meta = {
+            "entities": [{"text": self.PII, "label": "PERSON"}]
+            if self.PII in text
+            else []
+        }
         return replaced, meta
 
     async def rehydrate(self, text: str, *, project: str) -> str:

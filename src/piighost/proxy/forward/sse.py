@@ -1,4 +1,5 @@
 """Server-Sent Events chunk parser/rebuilder for streaming rehydration."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

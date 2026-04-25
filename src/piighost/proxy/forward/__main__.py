@@ -5,6 +5,7 @@
 Production callers should use `piighost proxy run --mode=forward`
 (see Task 13) which wraps this entry point with config defaults.
 """
+
 from __future__ import annotations
 
 import argparse

@@ -1,4 +1,5 @@
 """Tests for the SSE chunk parser used by the forward-proxy SSE rehydrator."""
+
 from __future__ import annotations
 
 from piighost.proxy.forward.sse import (
@@ -9,7 +10,7 @@ from piighost.proxy.forward.sse import (
 
 
 def test_parse_single_event():
-    raw = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
+    raw = b'event: message_start\ndata: {"type":"message_start"}\n\n'
 
     events = list(parse_sse_chunks(raw))
 
@@ -20,8 +21,8 @@ def test_parse_single_event():
 
 def test_parse_multiple_events():
     raw = (
-        b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n"
-        b"event: content_block_delta\ndata: {\"type\":\"text_delta\",\"text\":\"hi\"}\n\n"
+        b'event: message_start\ndata: {"type":"message_start"}\n\n'
+        b'event: content_block_delta\ndata: {"type":"text_delta","text":"hi"}\n\n'
     )
 
     events = list(parse_sse_chunks(raw))
@@ -31,7 +32,7 @@ def test_parse_multiple_events():
 
 
 def test_parse_handles_partial_chunk_at_end():
-    raw = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: partial\ndata: {"
+    raw = b'event: message_start\ndata: {"type":"message_start"}\n\nevent: partial\ndata: {'
 
     events = list(parse_sse_chunks(raw))
 
@@ -39,16 +40,21 @@ def test_parse_handles_partial_chunk_at_end():
 
 
 def test_rebuild_round_trip():
-    event = SSEEvent(event="content_block_delta", data='{"type":"text_delta","text":"hi"}')
+    event = SSEEvent(
+        event="content_block_delta", data='{"type":"text_delta","text":"hi"}'
+    )
 
     chunk = rebuild_sse_chunk(event)
 
-    assert chunk == b"event: content_block_delta\ndata: {\"type\":\"text_delta\",\"text\":\"hi\"}\n\n"
+    assert (
+        chunk
+        == b'event: content_block_delta\ndata: {"type":"text_delta","text":"hi"}\n\n'
+    )
 
 
 def test_parse_event_without_event_field_uses_message_default():
     """Per W3C SSE: if no `event:` line, the event type is `message`."""
-    raw = b"data: {\"x\": 1}\n\n"
+    raw = b'data: {"x": 1}\n\n'
 
     events = list(parse_sse_chunks(raw))
 

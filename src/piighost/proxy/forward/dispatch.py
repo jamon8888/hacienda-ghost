@@ -1,4 +1,5 @@
 """Coverage-matrix dispatcher: maps (method, path) → Handler."""
+
 from __future__ import annotations
 
 import re
