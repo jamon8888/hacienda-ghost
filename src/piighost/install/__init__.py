@@ -10,7 +10,6 @@ import typer
 from piighost.install import ca as ca_mod
 from piighost.install import claude_config, docker, host_config, models, preflight, trust_store, uv_path
 from piighost.install.ui import error, info, step, success, warn
-from piighost.service.config import ServiceConfig
 
 MCP_ENTRY_UV = {
     "type": "stdio",
@@ -250,7 +249,8 @@ def _run_strict_mode() -> None:
     success("\nStrict mode installed. Verify with: piighost doctor")
 
 
-def _load_config() -> ServiceConfig:
+def _load_config():  # type: ignore[return]
+    from piighost.service.config import ServiceConfig  # heavy import, only needed for full install
     config_path = Path(".piighost") / "config.toml"
     if config_path.exists():
         return ServiceConfig.from_toml(config_path)
