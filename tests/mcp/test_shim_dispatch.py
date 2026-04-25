@@ -98,3 +98,19 @@ async def test_dispatch_uses_per_tool_timeout() -> None:
     )
     # The httpx Timeout object embeds 600.0 as the read timeout
     assert captured["timeout"]["read"] == 600.0
+
+
+@pytest.mark.asyncio
+async def test_each_tool_has_explicit_kwargs(monkeypatch) -> None:
+    """Regression: every registered tool must have explicit named parameters,
+    not a single `params: dict`. This is what gives MCP clients a useful
+    parameter schema instead of a black box."""
+    from piighost.mcp.shim import _build_mcp
+    mcp = _build_mcp(base_url="http://x", token="t")
+    tools = await mcp.list_tools()
+    assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}"
+    for tool in tools:
+        props = list(tool.parameters.get("properties", {}).keys())
+        assert "params" not in props or len(props) > 1, (
+            f"{tool.name} accepts a generic `params: dict` instead of explicit kwargs"
+        )
