@@ -51,12 +51,24 @@ def _piighost_exe() -> list[str]:
 
 
 @pytest.fixture()
-def fresh_vault(tmp_path: Path) -> Path:
-    # The vault directory must exist before `piighost serve` is invoked:
-    # find_vault_dir() raises VaultNotFound for a non-existent --vault path.
+def fresh_vault(tmp_path: Path):
+    """Yield a fresh vault directory; terminate its daemon (if any) on teardown.
+
+    Stopping the daemon after each test prevents its background reaper task
+    from scanning the system every 60 s and inadvertently killing shims
+    spawned by a subsequent test (which are not Claude-hosted and therefore
+    look like orphans to the reaper).
+    """
     vault = tmp_path / ".piighost"
     vault.mkdir(parents=True, exist_ok=True)
-    return vault
+    yield vault
+    # Teardown: kill the daemon we started, if it's still alive.
+    hs = read_handshake(vault)
+    if hs and psutil.pid_exists(hs.pid):
+        try:
+            psutil.Process(hs.pid).kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
 
 def _spawn_shim(vault: Path) -> subprocess.Popen:
@@ -158,11 +170,19 @@ def test_disabled_flag_blocks_auto_spawn(fresh_vault: Path) -> None:
         # The Rich-formatted traceback can exceed the OS pipe buffer (64 KiB)
         # causing the subprocess to block on write(2) while we block on wait();
         # communicate() drains both concurrently and avoids the deadlock.
-        stdout, stderr_bytes = shim.communicate(timeout=15)
+        stdout_bytes, stderr_bytes = shim.communicate(timeout=15)
         rc = shim.returncode
         assert rc != 0, "shim must exit non-zero when daemon is disabled"
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
-        assert "stopped by user" in stderr.lower() or "DaemonDisabled" in stderr
+        # Error may be emitted on either stream depending on how piighost.EXE
+        # propagates its child process's output (Windows launcher quirks).
+        combined = (
+            stdout_bytes.decode("utf-8", errors="replace")
+            + stderr_bytes.decode("utf-8", errors="replace")
+        )
+        assert "stopped by user" in combined.lower() or "DaemonDisabled" in combined, (
+            f"Expected 'stopped by user' or 'DaemonDisabled' in combined output "
+            f"(rc={rc}); got {len(combined)} chars: {combined[:300]!r}"
+        )
     finally:
         if shim.poll() is None:
             shim.terminate()
