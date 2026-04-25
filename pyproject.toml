@@ -53,6 +53,7 @@ Changelog = "https://github.com/Athroniaeth/piighost/blob/master/CHANGELOG.md"
 [project.optional-dependencies]
 gliner2 = [
     "gliner2>=1.2",
+    "requests>=2.28",
 ]
 langchain = [
     "langchain>=1.2",
