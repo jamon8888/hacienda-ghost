@@ -39,7 +39,7 @@ def test_counter_factory_rejected() -> None:
     from piighost.anonymizer import Anonymizer
     from piighost.models import Detection, Span
     from piighost.pipeline.thread import ThreadAnonymizationPipeline
-    from piighost.placeholder import CounterPlaceholderFactory
+    from piighost.placeholder import LabelCounterPlaceholderFactory
 
     class _StubDetector:
         async def detect(self, text: str) -> list[Detection]:
@@ -56,9 +56,9 @@ def test_counter_factory_rejected() -> None:
             ]
 
     detector = _StubDetector()
-    anon = Anonymizer(CounterPlaceholderFactory())
+    anon = Anonymizer(LabelCounterPlaceholderFactory())
     bad_pipeline = ThreadAnonymizationPipeline(detector=detector, anonymizer=anon)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="HashPlaceholderFactory"):
+    with pytest.raises(ValueError, match="LabelHashPlaceholderFactory"):
         PIIGhostDocumentAnonymizer(pipeline=bad_pipeline)
 
 

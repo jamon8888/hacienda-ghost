@@ -31,7 +31,7 @@ from haystack.document_stores.in_memory import InMemoryDocumentStore  # noqa: E4
 from piighost.anonymizer import Anonymizer  # noqa: E402
 from piighost.models import Detection, Span  # noqa: E402
 from piighost.pipeline.thread import ThreadAnonymizationPipeline  # noqa: E402
-from piighost.placeholder import HashPlaceholderFactory  # noqa: E402
+from piighost.placeholder import LabelHashPlaceholderFactory  # noqa: E402
 from piighost.integrations.haystack import (  # noqa: E402
     PIIGhostDocumentAnonymizer,
     PIIGhostQueryAnonymizer,
@@ -68,7 +68,7 @@ def alain_pipeline() -> ThreadAnonymizationPipeline:
     """Local pipeline that recognises 'Alain Dupont' as a PERSON entity."""
     return ThreadAnonymizationPipeline(
         detector=_AlainDetector(),  # type: ignore[arg-type]
-        anonymizer=Anonymizer(HashPlaceholderFactory()),
+        anonymizer=Anonymizer(LabelHashPlaceholderFactory()),
     )
 
 
@@ -148,7 +148,7 @@ async def test_bm25_plus_vector_recovers_exact_name(alain_pipeline) -> None:
     alice_token = match.group(0) if match else None
     assert alice_token is not None, "query should contain an anonymized PERSON token"
     assert any(alice_token in doc.content for doc in anonymized_docs), (
-        "HashPlaceholderFactory must produce the same token for document and query paths"
+        "LabelHashPlaceholderFactory must produce the same token for document and query paths"
     )
 
     # --- Warm up embedders ---

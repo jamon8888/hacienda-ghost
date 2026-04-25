@@ -11,7 +11,7 @@ from piighost.exceptions import RehydrationError
 from piighost.integrations.haystack._base import run_coroutine_sync
 from piighost.models import Entity
 from piighost.pipeline.thread import ThreadAnonymizationPipeline
-from piighost.placeholder import AnyPlaceholderFactory, CounterPlaceholderFactory
+from piighost.placeholder import AnyPlaceholderFactory, LabelCounterPlaceholderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class PIIGhostDocumentAnonymizer:
             lenient (log ERROR, leave content unchanged, write
             ``meta["piighost_error"]``).
         allow_non_stable_tokens: Escape hatch for using
-            ``CounterPlaceholderFactory``.  Default ``False`` rejects it
+            ``LabelCounterPlaceholderFactory``.  Default ``False`` rejects it
             at construction time with a clear error.
     """
 
@@ -82,11 +82,11 @@ class PIIGhostDocumentAnonymizer:
         allow_non_stable_tokens: bool = False,
     ) -> None:
         if (
-            isinstance(pipeline.ph_factory, CounterPlaceholderFactory)
+            isinstance(pipeline.ph_factory, LabelCounterPlaceholderFactory)
             and not allow_non_stable_tokens
         ):
             raise ValueError(
-                "CounterPlaceholderFactory is not recommended for document "
+                "LabelCounterPlaceholderFactory is not recommended for document "
                 "pipelines because its tokens are not stable across documents "
                 "or queries. Use HashPlaceholderFactory instead, or pass "
                 "allow_non_stable_tokens=True if you know what you're doing."

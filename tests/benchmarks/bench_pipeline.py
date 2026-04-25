@@ -10,7 +10,7 @@ from piighost.anonymizer import Anonymizer
 from piighost.detector import ExactMatchDetector
 from piighost.linker.entity import ExactEntityLinker
 from piighost.pipeline.base import AnonymizationPipeline
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 from piighost.resolver.entity import MergeEntityConflictResolver
 from piighost.resolver.span import ConfidenceSpanConflictResolver
 
@@ -33,7 +33,7 @@ def _pipeline() -> AnonymizationPipeline:
         span_resolver=ConfidenceSpanConflictResolver(),
         entity_linker=ExactEntityLinker(),
         entity_resolver=MergeEntityConflictResolver(),
-        anonymizer=Anonymizer(CounterPlaceholderFactory()),
+        anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
     )
 
 

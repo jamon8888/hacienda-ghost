@@ -10,7 +10,7 @@ from piighost.detector import ExactMatchDetector
 from piighost.integrations.haystack.documents import PIIGhostDocumentAnonymizer
 from piighost.linker.entity import ExactEntityLinker
 from piighost.pipeline.thread import ThreadAnonymizationPipeline
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 from piighost.resolver.entity import MergeEntityConflictResolver
 from piighost.resolver.span import ConfidenceSpanConflictResolver
 
@@ -87,9 +87,9 @@ class TestPlaceholderFactoryCheck:
             span_resolver=ConfidenceSpanConflictResolver(),
             entity_linker=ExactEntityLinker(),
             entity_resolver=MergeEntityConflictResolver(),
-            anonymizer=Anonymizer(CounterPlaceholderFactory()),
+            anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
         )
-        with pytest.raises(ValueError, match="HashPlaceholderFactory"):
+        with pytest.raises(ValueError, match="LabelHashPlaceholderFactory"):
             PIIGhostDocumentAnonymizer(pipeline=pipeline)
 
     def test_counter_factory_allowed_with_escape_hatch(self) -> None:
@@ -98,7 +98,7 @@ class TestPlaceholderFactoryCheck:
             span_resolver=ConfidenceSpanConflictResolver(),
             entity_linker=ExactEntityLinker(),
             entity_resolver=MergeEntityConflictResolver(),
-            anonymizer=Anonymizer(CounterPlaceholderFactory()),
+            anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
         )
         PIIGhostDocumentAnonymizer(pipeline=pipeline, allow_non_stable_tokens=True)
 

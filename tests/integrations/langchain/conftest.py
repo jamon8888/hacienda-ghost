@@ -9,7 +9,7 @@ from piighost.classifier.base import AnyClassifier, ClassificationSchema
 from piighost.detector.base import AnyDetector
 from piighost.models import Detection, Span
 from piighost.pipeline.thread import ThreadAnonymizationPipeline
-from piighost.placeholder import HashPlaceholderFactory
+from piighost.placeholder import LabelHashPlaceholderFactory
 
 
 class _StubDetector:
@@ -48,7 +48,7 @@ def pipeline() -> ThreadAnonymizationPipeline:
     detector: AnyDetector = _StubDetector()  # type: ignore[assignment]  # _StubDetector satisfies AnyDetector structurally
     return ThreadAnonymizationPipeline(
         detector=detector,
-        anonymizer=Anonymizer(HashPlaceholderFactory()),
+        anonymizer=Anonymizer(LabelHashPlaceholderFactory()),
     )
 
 

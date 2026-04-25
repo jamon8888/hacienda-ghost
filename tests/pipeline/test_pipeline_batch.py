@@ -4,7 +4,7 @@ from piighost.anonymizer import Anonymizer
 from piighost.detector import ExactMatchDetector
 from piighost.linker.entity import ExactEntityLinker
 from piighost.pipeline.thread import ThreadAnonymizationPipeline
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 from piighost.resolver.entity import MergeEntityConflictResolver
 from piighost.resolver.span import ConfidenceSpanConflictResolver
 
@@ -17,7 +17,7 @@ def _pipeline(words: list[tuple[str, str]]) -> ThreadAnonymizationPipeline:
         span_resolver=ConfidenceSpanConflictResolver(),
         entity_linker=ExactEntityLinker(),
         entity_resolver=MergeEntityConflictResolver(),
-        anonymizer=Anonymizer(CounterPlaceholderFactory()),
+        anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
     )
 
 
@@ -66,7 +66,7 @@ async def test_max_threads_evicts_oldest_thread():
         span_resolver=ConfidenceSpanConflictResolver(),
         entity_linker=ExactEntityLinker(),
         entity_resolver=MergeEntityConflictResolver(),
-        anonymizer=Anonymizer(CounterPlaceholderFactory()),
+        anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
         max_threads=2,
     )
     await pipeline2.anonymize("Patrick arriva.", thread_id="t1")
