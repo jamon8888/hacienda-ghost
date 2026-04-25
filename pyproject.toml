@@ -100,6 +100,9 @@ proxy = [
     "httpx>=0.28",
     "typer>=0.9",
 ]
+forward = [
+    'mitmproxy>=11.0.0,<12; python_version >= "3.12"',
+]
 all = [
     "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy]",
 ]
