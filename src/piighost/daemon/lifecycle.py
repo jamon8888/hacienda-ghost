@@ -12,7 +12,14 @@ import httpx
 import portalocker
 import psutil
 
+from piighost.daemon.exceptions import DaemonDisabled, DaemonStartTimeout
 from piighost.daemon.handshake import DaemonHandshake, read_handshake
+
+_DISABLED_FILENAME = "daemon.disabled"
+
+
+def _disabled_path(vault_dir: Path) -> Path:
+    return vault_dir / _DISABLED_FILENAME
 
 
 def _is_alive(hs: DaemonHandshake) -> bool:
@@ -45,10 +52,18 @@ def _is_alive_with_retry(hs: DaemonHandshake, *, retries: int = 3, delay: float 
 def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 15.0) -> DaemonHandshake:
     """Return a running daemon handshake, spawning if necessary.
 
+    Raises ``DaemonDisabled`` if ``<vault>/daemon.disabled`` exists; the
+    user has explicitly stopped the daemon and does not want auto-spawn.
+
     A cross-platform advisory lock (``daemon.lock``) serializes concurrent
     callers so only the first one spawns; others wait, then read the
     handshake the first wrote.
     """
+    if _disabled_path(vault_dir).exists():
+        raise DaemonDisabled(
+            "piighost daemon was stopped by user. "
+            "Run: piighost daemon start"
+        )
 
     vault_dir.mkdir(parents=True, exist_ok=True)
     lock_path = vault_dir / "daemon.lock"
@@ -58,7 +73,10 @@ def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 15.0) -> DaemonHandsh
             return hs
         if hs:
             _cleanup_stale(vault_dir, hs)
-        return _spawn(vault_dir, timeout_sec=timeout_sec)
+        try:
+            return _spawn(vault_dir, timeout_sec=timeout_sec)
+        except TimeoutError as exc:
+            raise DaemonStartTimeout(str(exc)) from exc
 
 
 def _cleanup_stale(vault_dir: Path, hs: DaemonHandshake) -> None:
@@ -117,7 +135,14 @@ def _spawn(vault_dir: Path, *, timeout_sec: float) -> DaemonHandshake:
 
 
 def stop_daemon(vault_dir: Path) -> bool:
-    """Stop the running daemon (if any). Returns ``True`` if one was found."""
+    """Stop the running daemon and disable auto-spawn.
+
+    Always writes ``<vault>/daemon.disabled`` so future ``ensure_daemon``
+    calls raise ``DaemonDisabled`` instead of restarting the daemon.
+    Returns ``True`` if a running daemon was found and stopped.
+    """
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    _disabled_path(vault_dir).touch()
 
     hs = read_handshake(vault_dir)
     if hs is None:
@@ -143,6 +168,16 @@ def stop_daemon(vault_dir: Path) -> bool:
             pass
     (vault_dir / "daemon.json").unlink(missing_ok=True)
     return True
+
+
+def start_daemon(vault_dir: Path, *, timeout_sec: float = 15.0) -> DaemonHandshake:
+    """Remove the daemon.disabled flag (if any) and ensure the daemon is up.
+
+    Idempotent — safe to call when the daemon is already running.
+    """
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    _disabled_path(vault_dir).unlink(missing_ok=True)
+    return ensure_daemon(vault_dir, timeout_sec=timeout_sec)
 
 
 def status(vault_dir: Path) -> DaemonHandshake | None:
