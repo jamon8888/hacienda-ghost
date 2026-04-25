@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Optional
 
 from piighost.proxy.forward.handlers.base import Handler
 
@@ -54,3 +54,25 @@ class Dispatcher:
             if route.method == upper_method and route.pattern.match(bare_path):
                 return route.handler
         return self._default
+
+
+def build_default_dispatcher(
+    *,
+    service: object,
+    audit: "Optional[object]",
+) -> Dispatcher:
+    """Construct the dispatcher used by the production forward proxy.
+
+    Phase 1 covers /v1/messages (anonymized) and /v1/models* (passthrough).
+    Phase 2 will add /v1/files, /v1/messages/batches, etc.
+    """
+    from piighost.proxy.forward.handlers.messages import MessagesHandler
+    from piighost.proxy.forward.handlers.passthrough import PassthroughHandler
+    from piighost.proxy.forward.handlers.unknown import UnknownEndpointHandler
+
+    matrix: CoverageMatrix = {
+        ("POST", "/v1/messages"): MessagesHandler(service=service),  # type: ignore[arg-type]
+        ("GET", "/v1/models"): PassthroughHandler(),
+        ("GET", "/v1/models/{id}"): PassthroughHandler(),
+    }
+    return Dispatcher(matrix=matrix, default=UnknownEndpointHandler(audit_writer=audit))  # type: ignore[arg-type]

@@ -70,3 +70,24 @@ def test_id_pattern_does_not_overmatch():
     result = dispatcher.dispatch(method="GET", path="/v1/files/file_abc/sub")
 
     assert result is default
+
+
+def test_default_matrix_includes_messages_and_models(stub_service):
+    from piighost.proxy.forward.dispatch import build_default_dispatcher
+
+    dispatcher = build_default_dispatcher(
+        service=stub_service,
+        audit=None,
+    )
+
+    msg_handler = dispatcher.dispatch(method="POST", path="/v1/messages")
+    models_handler = dispatcher.dispatch(method="GET", path="/v1/models")
+    unknown_handler = dispatcher.dispatch(method="POST", path="/v1/wat")
+
+    from piighost.proxy.forward.handlers.messages import MessagesHandler
+    from piighost.proxy.forward.handlers.passthrough import PassthroughHandler
+    from piighost.proxy.forward.handlers.unknown import UnknownEndpointHandler
+
+    assert isinstance(msg_handler, MessagesHandler)
+    assert isinstance(models_handler, PassthroughHandler)
+    assert isinstance(unknown_handler, UnknownEndpointHandler)
