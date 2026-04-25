@@ -2,8 +2,8 @@
 
 Wraps :class:`AnonymizationPipeline` with a :class:`ConversationMemory`
 to accumulate entities across messages.  Provides ``deanonymize_with_ent``
-and ``anonymize_with_ent`` for simple ``str.replace``-based operations
-on any text containing known tokens or original values.
+and ``anonymize_with_ent`` for single-pass regex replacement on any text
+containing known tokens or original values.
 
 Conversation-scoped memory for accumulating entities across messages.
 
@@ -13,19 +13,69 @@ by message hash and deduplicated by ``(text.lower(), label)``.  The
 pipeline to recreate consistent placeholder tokens across messages.
 """
 
+import re
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from contextvars import ContextVar
 from typing import Protocol
+
+from typing_extensions import TypeVar
+
+from aiocache import BaseCache
 
 from piighost.anonymizer import AnyAnonymizer
 from piighost.detector import AnyDetector
 from piighost.linker.entity import AnyEntityLinker
 from piighost.models import Detection, Entity
-from piighost.pipeline.base import AnonymizationPipeline
-from piighost.placeholder import MaskPlaceholderFactory, RedactPlaceholderFactory
+from piighost.pipeline.base import (
+    CACHE_KEY_ANONYMIZATION,
+    CACHE_KEY_DETECTION,
+    AnonymizationPipeline,
+)
+from piighost.placeholder_tags import (
+    PlaceholderPreservation,
+    PreservesIdentity,
+    get_preservation_tag,
+)
 from piighost.resolver.entity import AnyEntityConflictResolver
 from piighost.resolver.span import AnySpanConflictResolver
 from piighost.utils import hash_sha256
+
+PreservationT = TypeVar(
+    "PreservationT",
+    bound=PlaceholderPreservation,
+    default=PlaceholderPreservation,
+)
+
+_current_thread_id: ContextVar[str] = ContextVar(
+    "piighost_current_thread_id", default="default"
+)
+"""Active thread id for the running coroutine.
+
+Used by :class:`ThreadAnonymizationPipeline` to propagate the ``thread_id``
+argument down to the cache-key helpers without mutating instance state,
+which would be unsafe when several coroutines share one pipeline.
+"""
+
+
+def _replace_longest_first(text: str, pairs: list[tuple[str, str]]) -> str:
+    """Replace every *source* with its *target* in one regex pass.
+
+    Sources are emitted longest-first in the alternation so that a match
+    on a longer source wins over any shorter prefix.  Duplicate sources
+    are collapsed: the first mapping wins.  Returns *text* unchanged
+    when ``pairs`` is empty.
+    """
+    mapping: dict[str, str] = {}
+    for source, target in pairs:
+        if source and source not in mapping:
+            mapping[source] = target
+
+    if not mapping:
+        return text
+
+    sources = sorted(mapping, key=len, reverse=True)
+    pattern = re.compile("|".join(re.escape(s) for s in sources))
+    return pattern.sub(lambda m: mapping[m.group(0)], text)
 
 
 class AnyConversationMemory(Protocol):
@@ -39,13 +89,17 @@ class AnyConversationMemory(Protocol):
     def record(self, text_hash: str, entities: list[Entity]) -> None: ...
 
 
-@dataclass
 class ConversationMemory:
     """In-memory conversation memory that accumulates entities across messages.
 
     Entities are stored per message hash and deduplicated by canonical
     identity ``(text.lower(), label)``.  The ``all_entities`` property
     flattens all stored entities in insertion order, skipping duplicates.
+
+    An internal canonical index makes ``record()`` lookups O(1) instead
+    of scanning every previously-seen entity.  The index points at the
+    current slot of each canonical entity inside ``entities_by_hash``
+    so that merging a new surface-form variant stays O(1) too.
 
     Example:
         >>> from piighost.models import Detection, Entity, Span
@@ -56,7 +110,14 @@ class ConversationMemory:
         [Entity(detections=(Detection(text='Patrick', label='PERSON', position=Span(start_pos=0, end_pos=7), confidence=0.9),))]
     """
 
-    entities_by_hash: dict[str, list[Entity]] = field(default_factory=dict)
+    def __init__(
+        self,
+        entities_by_hash: dict[str, list[Entity]] | None = None,
+    ) -> None:
+        self.entities_by_hash: dict[str, list[Entity]] = (
+            entities_by_hash if entities_by_hash is not None else {}
+        )
+        self._canonical_index: dict[tuple[str, str], tuple[str, int]] = {}
 
     def record(self, text_hash: str, entities: list[Entity]) -> None:
         """Record entities for a message, deduplicating against known ones.
@@ -70,75 +131,53 @@ class ConversationMemory:
             text_hash: SHA-256 hash of the original text.
             entities: Entities detected in that message.
         """
-        new_entities: list[Entity] = []
+        bucket = self.entities_by_hash.setdefault(text_hash, [])
+
         for entity in entities:
-            if self._is_known(entity):
-                self._add_variant(entity)
+            key = self._key(entity)
+            slot = self._canonical_index.get(key)
+            if slot is None:
+                bucket.append(entity)
+                self._canonical_index[key] = (text_hash, len(bucket) - 1)
             else:
-                new_entities.append(entity)
-        if text_hash in self.entities_by_hash:
-            self.entities_by_hash[text_hash].extend(new_entities)
-        else:
-            self.entities_by_hash[text_hash] = new_entities
+                self._merge_variant(slot, entity)
 
     @property
     def all_entities(self) -> list[Entity]:
         """Flat deduplicated list of all entities, in insertion order."""
-        seen: set[tuple[str, str]] = set()
-        result: list[Entity] = []
-        for entities in self.entities_by_hash.values():
-            for entity in entities:
-                key = (entity.detections[0].text.lower(), entity.label)
-                if key not in seen:
-                    seen.add(key)
-                    result.append(entity)
-        return result
+        return [
+            self.entities_by_hash[text_hash][index]
+            for text_hash, index in self._canonical_index.values()
+        ]
 
-    def _is_known(self, entity: Entity) -> bool:
-        """Check if a canonically identical entity already exists."""
-        canonical = entity.detections[0].text.lower()
-        label = entity.label
-        return any(
-            e.detections[0].text.lower() == canonical and e.label == label
-            for entities in self.entities_by_hash.values()
-            for e in entities
-        )
+    @staticmethod
+    def _key(entity: Entity) -> tuple[str, str]:
+        """Canonical identity used for deduplication."""
+        return entity.detections[0].text.lower(), entity.label
 
-    def _add_variant(self, entity: Entity) -> None:
-        """Merge new text variants into the matching existing entity.
+    def _merge_variant(self, slot: tuple[str, int], entity: Entity) -> None:
+        """Merge a new surface-form variant into the entity at *slot*.
 
-        When the same entity appears with a different surface form
-        (e.g. ``"france"`` vs ``"France"``), the new text is appended
-        to the existing ``Entity`` so that ``anonymize_with_ent`` can
-        replace all forms via ``str.replace``.
+        Detections whose exact ``text`` already belongs to the stored
+        entity are skipped; anything new is appended so that
+        ``anonymize_with_ent`` can replace every observed spelling.
         """
-        canonical = entity.detections[0].text.lower()
-        label = entity.label
-
-        for entity_list in self.entities_by_hash.values():
-            for i, existing in enumerate(entity_list):
-                if (
-                    existing.detections[0].text.lower() == canonical
-                    and existing.label == label
-                ):
-                    existing_texts = {d.text for d in existing.detections}
-                    new_dets = tuple(
-                        d for d in entity.detections if d.text not in existing_texts
-                    )
-                    if new_dets:
-                        entity_list[i] = Entity(
-                            detections=existing.detections + new_dets
-                        )
-                    return
+        text_hash, index = slot
+        bucket = self.entities_by_hash[text_hash]
+        existing = bucket[index]
+        existing_texts = {d.text for d in existing.detections}
+        new_dets = tuple(d for d in entity.detections if d.text not in existing_texts)
+        if new_dets:
+            bucket[index] = Entity(detections=existing.detections + new_dets)
 
 
-class ThreadAnonymizationPipeline(AnonymizationPipeline):
+class ThreadAnonymizationPipeline(AnonymizationPipeline[PreservationT]):
     """Adds conversation memory on top of ``AnonymizationPipeline``.
 
     Delegates detection, resolution, and span-based anonymization to the
     base pipeline.  After each ``anonymize()`` call, entities are recorded
     in memory so that ``deanonymize_with_ent`` / ``anonymize_with_ent``
-    can operate on *any* text via ``str.replace``.
+    can operate on *any* text via a single regex-alternation pass.
 
     Memory and cache are isolated per ``thread_id`` passed to each
     method.  Cache keys are prefixed with the thread id so that a
@@ -151,25 +190,31 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         entity_linker: The entity linker to use.
         entity_resolver: The entity conflict resolver to use.
         anonymizer: The anonymizer to use for span-based replacement.
+        cache: Optional aiocache backend.  Defaults to a fresh
+            ``SimpleMemoryCache``.
+        cache_ttl: Time-to-live in seconds for every cache entry the
+            pipeline writes.  ``None`` keeps entries forever.
+        max_threads: Maximum number of conversation memories kept in
+            RAM.  When a new thread is created past the cap, the least
+            recently used memory is evicted.  ``None`` (default)
+            disables the cap; use it with caution on long-running
+            servers that juggle many conversations.
     """
 
     def __init__(
         self,
         detector: AnyDetector,
-        anonymizer: AnyAnonymizer,
+        anonymizer: AnyAnonymizer[PreservationT],
         entity_linker: AnyEntityLinker | None = None,
         entity_resolver: AnyEntityConflictResolver | None = None,
         span_resolver: AnySpanConflictResolver | None = None,
-        max_threads: int = 100,
+        cache: BaseCache | None = None,
+        cache_ttl: int | None = None,
+        max_threads: int | None = None,
     ) -> None:
-        factory = anonymizer.ph_factory
-        if isinstance(factory, (RedactPlaceholderFactory, MaskPlaceholderFactory)):
-            raise ValueError(
-                f"{type(factory).__name__} cannot be used with "
-                f"ThreadAnonymizationPipeline because it produces "
-                f"non-unique tokens that cannot be deanonymized. "
-                f"Use CounterPlaceholderFactory or HashPlaceholderFactory instead."
-            )
+        if max_threads is not None and max_threads <= 0:
+            raise ValueError(f"max_threads must be positive or None, got {max_threads}")
+        self._reject_non_identity_factory(anonymizer.ph_factory)
 
         super().__init__(
             detector,
@@ -177,23 +222,67 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
             entity_linker=entity_linker,
             entity_resolver=entity_resolver,
             anonymizer=anonymizer,
+            cache=cache,
+            cache_ttl=cache_ttl,
         )
 
         self._memories: OrderedDict[str, ConversationMemory] = OrderedDict()
         self._max_threads = max_threads
-        self._thread_id: str = "default"
+
+    @staticmethod
+    def _reject_non_identity_factory(factory: object) -> None:
+        """Raise if the factory does not advertise ``PreservesIdentity``.
+
+        Mirrors the static-typing constraint: the middleware and
+        conversation-memory logic both assume each entity maps to a
+        unique, reversible token, so factories tagged with a weaker
+        preservation level are rejected upfront.
+        """
+        tag = get_preservation_tag(factory)
+        if tag is None:
+            # Untyped factory: accept but trust the caller. Preserves
+            # backwards-compat with user-defined factories that haven't
+            # adopted the phantom-tag system yet.
+            return
+        if not issubclass(tag, PreservesIdentity):
+            raise ValueError(
+                f"{type(factory).__name__} is tagged "
+                f"'{tag.__name__}' and cannot be used with "
+                f"ThreadAnonymizationPipeline, which requires a factory "
+                f"tagged 'PreservesIdentity' so tokens can be "
+                f"deanonymised per-entity. "
+                f"Use LabelCounterPlaceholderFactory or LabelHashPlaceholderFactory instead."
+            )
 
     def get_memory(self, thread_id: str = "default") -> ConversationMemory:
-        """Return the memory for *thread_id*, evicting LRU thread if over limit."""
-        if thread_id in self._memories:
+        """Return the memory for *thread_id* (created on first access).
+
+        If ``max_threads`` is set, accessing a thread refreshes its LRU
+        position and creating a new one evicts the least recently used
+        memory.
+        """
+        memory = self._memories.get(thread_id)
+        if memory is not None:
             self._memories.move_to_end(thread_id)
-            return self._memories[thread_id]
+            return memory
 
-        if len(self._memories) >= self._max_threads:
-            self._memories.popitem(last=False)  # evict least-recently-used
+        memory = ConversationMemory()
+        self._memories[thread_id] = memory
+        if self._max_threads is not None and len(self._memories) > self._max_threads:
+            self._memories.popitem(last=False)
+        return memory
 
-        self._memories[thread_id] = ConversationMemory()
-        return self._memories[thread_id]
+    def clear_memory(self, thread_id: str) -> None:
+        """Drop the memory for *thread_id* (no-op if unknown).
+
+        Callers should invoke this when a conversation ends so the
+        pipeline does not retain its entities indefinitely.
+        """
+        self._memories.pop(thread_id, None)
+
+    def clear_all_memories(self) -> None:
+        """Drop every conversation memory tracked by the pipeline."""
+        self._memories.clear()
 
     def get_resolved_entities(self, thread_id: str = "default") -> list[Entity]:
         """All entities from the thread's memory, merged by the entity resolver."""
@@ -203,9 +292,10 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
     # Cache key helpers — prefix with thread_id for isolation
     # ------------------------------------------------------------------
 
-    def _thread_key(self, key: str) -> str:
-        """Prefix a cache key with the active thread id."""
-        return f"{self._thread_id}:{key}"
+    @staticmethod
+    def _thread_key(thread_id: str, key: str) -> str:
+        """Prefix a cache key with the given thread id."""
+        return f"{thread_id}:{key}"
 
     async def override_detections(
         self,
@@ -230,17 +320,21 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         if self._cache is None:
             raise RuntimeError("Cannot override detections without a cache backend")
 
-        self._thread_id = thread_id
-        cache_key = self._thread_key(f"detect:{hash_sha256(text)}")
+        cache_key = self._thread_key(
+            thread_id, f"{CACHE_KEY_DETECTION}:{hash_sha256(text)}"
+        )
         value = self._serialize_detections(detections)
-        await self._cache.set(cache_key, value)
+        await self._cache.set(cache_key, value, ttl=self._cache_ttl)
 
     async def _cached_detect(self, text: str) -> list[Detection]:
         """Detect entities, using thread-scoped cache if available."""
         if self._cache is None:
             return await self._detector.detect(text)
 
-        cache_key = self._thread_key(f"detect:{hash_sha256(text)}")
+        thread_id = _current_thread_id.get()
+        cache_key = self._thread_key(
+            thread_id, f"{CACHE_KEY_DETECTION}:{hash_sha256(text)}"
+        )
         cached = await self._cache.get(cache_key)
 
         if cached is not None:
@@ -248,7 +342,7 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
 
         detections = await self._detector.detect(text)
         value = self._serialize_detections(detections)
-        await self._cache.set(cache_key, value)
+        await self._cache.set(cache_key, value, ttl=self._cache_ttl)
         return detections
 
     async def _store_mapping(
@@ -261,8 +355,11 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         if self._cache is None:
             return
 
+        thread_id = _current_thread_id.get()
         serialized_entities = self._serialize_entities(entities)
-        key = self._thread_key(f"anon:anonymized:{hash_sha256(anonymized)}")
+        key = self._thread_key(
+            thread_id, f"{CACHE_KEY_ANONYMIZATION}:{hash_sha256(anonymized)}"
+        )
 
         await self._cache.set(
             key,
@@ -270,6 +367,7 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
                 "original": original,
                 "entities": serialized_entities,
             },
+            ttl=self._cache_ttl,
         )
 
     # ------------------------------------------------------------------
@@ -301,8 +399,9 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         """
         from piighost.exceptions import CacheMissError
 
-        self._thread_id = thread_id
-        key = self._thread_key(f"anon:anonymized:{hash_sha256(anonymized_text)}")
+        key = self._thread_key(
+            thread_id, f"{CACHE_KEY_ANONYMIZATION}:{hash_sha256(anonymized_text)}"
+        )
         cached = await self._cache_get(key)
 
         if cached is None:
@@ -328,72 +427,29 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         Returns:
             A tuple of (anonymized text, entities used for anonymization).
         """
-        self._thread_id = thread_id
-        memory = self.get_memory(thread_id)
+        token = _current_thread_id.set(thread_id)
+        try:
+            memory = self.get_memory(thread_id)
 
-        entities = await self.detect_entities(text)
-        entities = self._entity_linker.link_entities(
-            entities,
-            memory.all_entities,
-        )
-        memory.record(hash_sha256(text), entities)
-        result = self.anonymize_with_ent(text, thread_id=thread_id)
-
-        # Required for deanonymize method which looks up mappings via cache.
-        await self._store_mapping(text, result, entities)
-        return result, entities
-
-    async def anonymize_batch(
-        self,
-        texts: list[str],
-        thread_id: str = "default",
-    ) -> list[tuple[str, list[Entity]]]:
-        """Anonymize multiple texts for the same thread in one call.
-
-        Uses ``detect_batch()`` if the detector exposes it (e.g.
-        ``Gliner2Detector`` with ``batch_size > 1``), allowing a single
-        model forward pass for all texts. Entity linking and memory
-        recording are sequential to preserve placeholder counter order
-        across messages.
-
-        Args:
-            texts: Ordered list of texts to anonymize.
-            thread_id: Thread identifier for memory and cache isolation.
-
-        Returns:
-            One ``(anonymized_text, entities)`` tuple per input text,
-            in the same order as ``texts``.
-        """
-        if not texts:
-            return []
-
-        self._thread_id = thread_id
-        memory = self.get_memory(thread_id)
-
-        if hasattr(self._detector, "detect_batch"):
-            raw_detections = await self._detector.detect_batch(texts)
-        else:
-            raw_detections = [await self._cached_detect(t) for t in texts]
-
-        results: list[tuple[str, list[Entity]]] = []
-        for text, detections in zip(texts, raw_detections):
-            detections = self._span_resolver.resolve(detections)
-            entities = self._entity_linker.link(text, detections)
-            entities = self._entity_resolver.resolve(entities)
-            entities = self._entity_linker.link_entities(entities, memory.all_entities)
+            entities = await self.detect_entities(text)
+            entities = self._entity_linker.link_entities(
+                entities,
+                memory.all_entities,
+            )
             memory.record(hash_sha256(text), entities)
-            anonymized = self.anonymize_with_ent(text, thread_id=thread_id)
-            await self._store_mapping(text, anonymized, entities)
-            results.append((anonymized, entities))
+            result = self.anonymize_with_ent(text, thread_id=thread_id)
 
-        return results
+            await self._store_mapping(text, result, entities)
+            return result, entities
+        finally:
+            _current_thread_id.reset(token)
 
     async def deanonymize_with_ent(
         self,
         text: str,
         thread_id: str = "default",
     ) -> str:
-        """Replace all known tokens with original values via ``str.replace``.
+        """Replace all known tokens with original values in a single pass.
 
         Works on any text containing tokens, even text never anonymized
         by this pipeline (e.g. LLM-generated output, tool arguments).
@@ -409,34 +465,30 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
         Returns:
             Text with tokens replaced by original values.
         """
-        self._thread_id = thread_id
         resolved = self.get_resolved_entities(thread_id)
 
         if not resolved:
             return text
 
         tokens = self.ph_factory.create(resolved)
+        pairs = [(token, entity.detections[0].text) for entity, token in tokens.items()]
 
         anonymized = text
-        # Sort by token length descending (longest-first).
-        for entity, token in sorted(
-            tokens.items(),
-            key=lambda x: len(x[1]),
-            reverse=True,
-        ):
-            canonical = entity.detections[0].text
-            text = text.replace(token, canonical)
+        restored = _replace_longest_first(text, pairs)
 
-        # Store mapping so deanonymize() cache lookup works for this text.
-        await self._store_mapping(text, anonymized, resolved)
-        return text
+        cv_token = _current_thread_id.set(thread_id)
+        try:
+            await self._store_mapping(restored, anonymized, resolved)
+        finally:
+            _current_thread_id.reset(cv_token)
+        return restored
 
     def anonymize_with_ent(
         self,
         text: str,
         thread_id: str = "default",
     ) -> str:
-        """Replace all known original values with tokens via ``str.replace``.
+        """Replace all known original values with tokens in a single pass.
 
         Replaces **all** spelling variants of each entity (not just the
         canonical form).  Values are replaced **longest-first** to avoid
@@ -456,15 +508,9 @@ class ThreadAnonymizationPipeline(AnonymizationPipeline):
 
         tokens = self.ph_factory.create(resolved)
 
-        # Collect all (detection_text, token) pairs for all variants.
-        replacements: list[tuple[str, str]] = []
+        pairs: list[tuple[str, str]] = []
         for entity, token in tokens.items():
             for detection in entity.detections:
-                replacements.append((detection.text, token))
+                pairs.append((detection.text, token))
 
-        # Sort by original text length descending (longest-first).
-        replacements.sort(key=lambda x: len(x[0]), reverse=True)
-
-        for original, token in replacements:
-            text = text.replace(original, token)
-        return text
+        return _replace_longest_first(text, pairs)

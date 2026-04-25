@@ -36,6 +36,18 @@ hallucinée n'est pas dans le cache et n'est donc pas anonymisée lorsque la ré
 **Mitigation** : exécutez une étape de validation post-réponse au niveau applicatif. Redétectez les PII sur la
 sortie du LLM et décidez s'il faut les supprimer, les signaler ou les réanonymiser avant affichage à l'utilisateur.
 
+## Le choix de la stratégie outil dépend du placeholder factory
+
+`PIIAnonymizationMiddleware` expose trois stratégies d'appel outil (`FULL`, `INBOUND_ONLY`, `PASSTHROUGH`) via le
+paramètre `tool_strategy`. La frontière outil ne peut pas s'appuyer sur le cache, uniquement sur du remplacement de
+chaîne, donc elle exige des placeholders uniques pour rester réversible. `LabelHashPlaceholderFactory` est le défaut le
+plus sûr ; `FakerPlaceholderFactory` peut collisionner avec de vraies valeurs dans les réponses d'outils ;
+`LabelPlaceholderFactory` et `MaskPlaceholderFactory` sont rejetés à la construction par
+`ThreadAnonymizationPipeline`.
+
+**Mitigation** : voir [Placeholder factories](placeholder-factories.md) pour la taxonomie et
+[Stratégies d'appel outil](tool-call-strategies.md) pour choisir un mode.
+
 ## Le cache est en mémoire par défaut
 
 La pipeline d'anonymisation (`AnonymizationPipeline`) utilise `aiocache` avec un backend en mémoire par défaut.
@@ -48,7 +60,7 @@ C'est correct pour un déploiement mono-processus, mais cela casse dès que vous
 ## La latence ajoutée n'est pas encore mesurée
 
 Il n'existe pas de benchmark officiel de la latence ajoutée par le pipeline sur des charges typiques. L'overhead
-dépend du détecteur (inférence GLiNER2), de la longueur du texte, et de la présence de hits dans le cache.
+dépend du détecteur (inférence du NER choisi), de la longueur du texte, et de la présence de hits dans le cache.
 
 **Mitigation** : mesurez sur votre propre charge avant de dimensionner le trafic de production. Gardez les
 détecteurs sur GPU quand c'est possible pour les chemins à forte densité NER.

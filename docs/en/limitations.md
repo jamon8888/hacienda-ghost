@@ -34,6 +34,17 @@ therefore not anonymized when the response is sent back through the middleware.
 **Mitigation**: run a post-response validation step at the application layer. Re-detect PII on the LLM output and
 decide whether to strip, flag, or re-anonymize them before displaying to the user.
 
+## Tool-call strategy depends on the placeholder factory
+
+`PIIAnonymizationMiddleware` offers three tool-call strategies (`FULL`, `INBOUND_ONLY`, `PASSTHROUGH`) via the
+`tool_strategy` parameter. The tool-call boundary cannot rely on the cache, only on string replacement, so it
+needs unique placeholders to be reversible. `LabelHashPlaceholderFactory` is the safest default; `FakerPlaceholderFactory`
+can collide with real values in tool responses; `LabelPlaceholderFactory` and `MaskPlaceholderFactory` are rejected
+at construction by `ThreadAnonymizationPipeline`.
+
+**Mitigation**: see [Placeholder factories](placeholder-factories.md) for the taxonomy and
+[Tool-call strategies](tool-call-strategies.md) for picking a mode.
+
 ## Cache is in-memory by default
 
 The anonymization pipeline (`AnonymizationPipeline`) uses `aiocache` with an in-memory backend by default. This is
@@ -46,7 +57,7 @@ independent placeholder spaces).
 ## Latency overhead is not yet benchmarked
 
 There is no official benchmark of the latency added by the pipeline on typical workloads. The overhead depends on
-the detector (GLiNER2 inference), the text length, and whether cache hits occur.
+the detector (NER inference), the text length, and whether cache hits occur.
 
 **Mitigation**: measure on your own workload before sizing production traffic. Keep detectors on GPU when possible
 for NER-heavy paths.

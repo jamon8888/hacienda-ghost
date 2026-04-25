@@ -1,5 +1,8 @@
 ---
 icon: lucide/puzzle
+tags:
+  - Avancé
+  - Détecteur
 ---
 
 # Etendre PIIGhost
@@ -31,56 +34,56 @@ class AnyDetector(Protocol):
     async def detect(self, text: str) -> list[Detection]: ...
 ```
 
-### Exemple Detecteur spaCy
+???+ example "Détecteur spaCy"
 
-```python
-import spacy
-from piighost.models import Detection, Span
+    ```python
+    import spacy
+    from piighost.models import Detection, Span
 
-class SpacyDetector:
-    """Detecteur NER base sur spaCy."""
+    class SpacyDetector:
+        """Detecteur NER base sur spaCy."""
 
-    def __init__(self, model_name: str = "fr_core_news_sm"):
-        self._nlp = spacy.load(model_name)
+        def __init__(self, model_name: str = "fr_core_news_sm"):
+            self._nlp = spacy.load(model_name)
 
-    async def detect(self, text: str) -> list[Detection]:
-        doc = self._nlp(text)
-        return [
-            Detection(
-                text=ent.text,
-                label=ent.label_,
-                position=Span(start_pos=ent.start_char, end_pos=ent.end_char),
-                confidence=1.0,
-            )
-            for ent in doc.ents
-        ]
-```
-
-### Exemple Detecteur par liste blanche
-
-```python
-import re
-from piighost.models import Detection, Span
-
-class AllowlistDetector:
-    """Detecte les entites d'une liste fixe (utile pour les tests ou les donnees structurees)."""
-
-    def __init__(self, allowlist: dict[str, str]):
-        # {"Patrick Dupont": "PERSON", "Paris": "LOCATION"}
-        self._allowlist = allowlist
-
-    async def detect(self, text: str) -> list[Detection]:
-        detections = []
-        for fragment, label in self._allowlist.items():
-            for match in re.finditer(re.escape(fragment), text):
-                detections.append(Detection(
-                    text=match.group(),
-                    label=label,
-                    position=Span(start_pos=match.start(), end_pos=match.end()),
+        async def detect(self, text: str) -> list[Detection]:
+            doc = self._nlp(text)
+            return [
+                Detection(
+                    text=ent.text,
+                    label=ent.label_,
+                    position=Span(start_pos=ent.start_char, end_pos=ent.end_char),
                     confidence=1.0,
-                ))
-        return detections
-```
+                )
+                for ent in doc.ents
+            ]
+    ```
+
+??? example "Détecteur par liste blanche"
+
+    ```python
+    import re
+    from piighost.models import Detection, Span
+
+    class AllowlistDetector:
+        """Detecte les entites d'une liste fixe (utile pour les tests ou les donnees structurees)."""
+
+        def __init__(self, allowlist: dict[str, str]):
+            # {"Patrick Dupont": "PERSON", "Paris": "LOCATION"}
+            self._allowlist = allowlist
+
+        async def detect(self, text: str) -> list[Detection]:
+            detections = []
+            for fragment, label in self._allowlist.items():
+                for match in re.finditer(re.escape(fragment), text):
+                    detections.append(Detection(
+                        text=match.group(),
+                        label=label,
+                        position=Span(start_pos=match.start(), end_pos=match.end()),
+                        confidence=1.0,
+                    ))
+            return detections
+    ```
 
 ### Utilisation
 
@@ -92,6 +95,74 @@ pipeline = AnonymizationPipeline(
     ...,
 )
 ```
+
+---
+
+## Packs regex prêts à l'emploi
+
+Pour les PII structurées dont la syntaxe est standardisée (e-mails,
+IBAN, téléphones, SSN), PIIGhost fournit des dictionnaires regex
+organisés par zone géographique. Vous piochez uniquement ceux dont vous
+avez besoin, et vous les fusionnez librement.
+
+| Pack | Module | Labels |
+|------|--------|--------|
+| `GENERIC_PATTERNS` | `piighost.detector.patterns.generic` | `EMAIL`, `URL`, `IPV4`, `CREDIT_CARD` |
+| `FR_PATTERNS` | `piighost.detector.patterns.fr` | `FR_PHONE`, `FR_IBAN`, `FR_NIR`, `FR_SIRET` |
+| `US_PATTERNS` | `piighost.detector.patterns.us` | `US_SSN`, `US_PHONE`, `US_ZIP` |
+| `EU_PATTERNS` | `piighost.detector.patterns.eu` | `IBAN` (tout pays) |
+
+```python
+from piighost.detector import RegexDetector
+from piighost.detector.patterns import FR_PATTERNS, GENERIC_PATTERNS
+
+detector = RegexDetector(patterns={**GENERIC_PATTERNS, **FR_PATTERNS})
+```
+
+Les packs sont volontairement **permissifs sur la syntaxe** : le motif
+`CREDIT_CARD` accepte n'importe quelle séquence de 13 à 19 chiffres,
+`IBAN` accepte un préfixe de 2 lettres suivi de 11 à 30 alphanumériques,
+`FR_NIR` accepte la forme complète du NIR sans contrôler la clé. Sans
+validateur, ces motifs produisent beaucoup de faux positifs (toute
+longue séquence numérique ressemble à un numéro de carte).
+
+## Validateurs de checksum
+
+PIIGhost fournit des validateurs dans `piighost.validators` qui se
+branchent directement sur `RegexDetector` pour filtrer les matches
+syntaxiquement corrects mais invalides selon un contrôle métier :
+
+| Validateur | S'applique à | Algorithme |
+|------------|--------------|------------|
+| `validate_luhn` | cartes bancaires, IMEI | mod-10 (Luhn) |
+| `validate_iban` | IBAN (tout pays) | mod-97 ISO 13616 |
+| `validate_nir` | NIR français | clé = 97 − (corps mod 97) |
+
+```python
+from piighost.detector import RegexDetector
+from piighost.detector.patterns import FR_PATTERNS, GENERIC_PATTERNS
+from piighost.validators import validate_iban, validate_luhn, validate_nir
+
+detector = RegexDetector(
+    patterns={**GENERIC_PATTERNS, **FR_PATTERNS},
+    validators={
+        "CREDIT_CARD": validate_luhn,
+        "FR_IBAN": validate_iban,
+        "FR_NIR": validate_nir,
+    },
+)
+```
+
+Un label sans entrée dans `validators` est accepté sur la seule base du
+match regex. Les matches rejetés par un validateur sont silencieusement
+écartés (aucun log, aucune exception) ; chaînez un autre détecteur si
+vous voulez enregistrer le rejet.
+
+!!! tip "Votre propre validateur"
+    N'importe quel `Callable[[str], bool]` convient. Utilisez-le pour
+    ajouter un contrôle spécifique (filtre des plages SSN réservées sur
+    `US_SSN`, liste blanche de domaines sur `EMAIL`, etc.) sans toucher
+    au regex.
 
 ---
 
@@ -144,6 +215,22 @@ class AnySpanConflictResolver(Protocol):
     def resolve(self, detections: list[Detection]) -> list[Detection]: ...
 ```
 
+### Désactiver le composant
+
+Passer `DisabledSpanConflictResolver()` pour conserver toutes les détections telles quelles. Utile quand le détecteur garantit déjà des spans non chevauchants, ou quand on veut que les chevauchements remontent jusqu'au linker.
+
+```python
+from piighost import DisabledSpanConflictResolver
+
+pipeline = AnonymizationPipeline(
+    detector=detector,
+    span_resolver=DisabledSpanConflictResolver(),  # ← passe-plat
+    entity_linker=...,
+    entity_resolver=...,
+    anonymizer=...,
+)
+```
+
 ---
 
 ## Creer un `AnyEntityLinker` personnalise
@@ -155,6 +242,22 @@ class AnySpanConflictResolver(Protocol):
 ```python
 class AnyEntityLinker(Protocol):
     def link(self, text: str, detections: list[Detection]) -> list[Entity]: ...
+```
+
+### Désactiver le composant
+
+Passer `DisabledEntityLinker()` pour mapper chaque détection 1:1 à une `Entity`. Pas d'expansion (pas de recherche d'occurrences manquées), pas de regroupement, pas de liaison entre messages. Utile quand le détecteur produit déjà des détections propres et déduplicquées.
+
+```python
+from piighost import DisabledEntityLinker
+
+pipeline = AnonymizationPipeline(
+    detector=detector,
+    span_resolver=...,
+    entity_linker=DisabledEntityLinker(),  # ← passe-plat
+    entity_resolver=...,
+    anonymizer=...,
+)
 ```
 
 ---
@@ -174,6 +277,7 @@ Implementations fournies :
 
 - `MergeEntityConflictResolver` algorithme union-find fusionnant les entites avec des detections communes
 - `FuzzyEntityConflictResolver` fusionne les entites avec un texte canonique similaire via similarite Jaro-Winkler
+- `DisabledEntityConflictResolver` passe-plat qui retourne les entités telles quelles (pour désactiver entièrement la fusion)
 
 ---
 
@@ -184,52 +288,11 @@ Implementations fournies :
 ### Protocole
 
 ```python
-class AnyPlaceholderFactory(Protocol):
+class AnyPlaceholderFactory(Protocol[PreservationT_co]):
     def create(self, entities: list[Entity]) -> dict[Entity, str]: ...
 ```
 
-### Exemple Tags UUID
-
-```python
-import uuid
-from piighost.models import Entity
-
-class UUIDPlaceholderFactory:
-    """Genere des tags UUID opaques, ex: <<a3f2-1b4c>>."""
-
-    def create(self, entities: list[Entity]) -> dict[Entity, str]:
-        result: dict[Entity, str] = {}
-        seen: dict[str, str] = {}
-
-        for entity in entities:
-            canonical = entity.detections[0].text.lower()
-            if canonical not in seen:
-                seen[canonical] = f"<<{uuid.uuid4().hex[:8]}>>"
-            result[entity] = seen[canonical]
-
-        return result
-```
-
-### Exemple Format personnalise
-
-```python
-from collections import defaultdict
-from piighost.models import Entity
-
-class BracketPlaceholderFactory:
-    """Genere des tags au format [PERSON:1], [LOCATION:2], etc."""
-
-    def create(self, entities: list[Entity]) -> dict[Entity, str]:
-        result: dict[Entity, str] = {}
-        counters: dict[str, int] = defaultdict(int)
-
-        for entity in entities:
-            label = entity.label
-            counters[label] += 1
-            result[entity] = f"[{label}:{counters[label]}]"
-
-        return result
-```
+Chaque factory porte un **tag de préservation** fantôme (`PreservesIdentity`, `PreservesLabel`, `PreservesShape`, `PreservesNothing`) que le type-checker utilise pour verrouiller les consommateurs comme `PIIAnonymizationMiddleware`. Voir [Placeholder factories](placeholder-factories.md) pour la taxonomie complète, les exemples détaillés (`UUIDPlaceholderFactory`, `BracketPlaceholderFactory`) et le raisonnement derrière la contrainte.
 
 ### Utilisation
 

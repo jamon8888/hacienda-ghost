@@ -1,6 +1,6 @@
 [project]
 name = "piighost"
-version = "0.7.0"
+version = "0.8.0"
 description = "PII anonymization middleware for AI agent conversations using LangChain integration."
 readme = "README.md"
 license = { text = "MIT" }
@@ -35,14 +35,8 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "portalocker>=3.2.0",
-    "psutil>=7.2.2",
-    "pydantic>=2.0",
-    "httpx>=0.28",
+    "typing-extensions>=4.12",
 ]
-
-[project.scripts]
-piighost = "piighost.cli.main:app"
 
 [project.urls]
 Homepage = "https://github.com/Athroniaeth/piighost"
@@ -70,6 +64,7 @@ middleware = [
 ]
 client = [
     "httpx>=0.28",
+    "typing-extensions>=4.4; python_version < '3.11'",
 ]
 spacy = [
     "spacy>=3.7",
@@ -100,8 +95,11 @@ proxy = [
     "httpx>=0.28",
     "typer>=0.9",
 ]
+forward = [
+    'mitmproxy>=11.0.0,<12; python_version >= "3.12"',
+]
 all = [
-    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy]",
+    "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy,forward]",
 ]
 
 [build-system]
@@ -120,21 +118,7 @@ dev = [
     "zensical>=0.0.27",
     "commitizen>=4.13.9",
     "pytest-asyncio>=0.25",
-    "pytest-benchmark>=5.1",
-    "kreuzberg>=4.9.4",
-    "lancedb>=0.30.2",
-    "rank-bm25>=0.2.2",
-    "sentence-transformers>=3.0",
-    "pyarrow>=14.0",
-    "fastmcp>=3.2.4",
-    "mcp>=1.0",
-    "typer>=0.9",
-    "aiocache>=0.12.3",
-    "faker>=40.11",
-    "langchain>=1.2",
-    "langchain-core>=0.3",
-    "cryptography>=42.0",
-    "uvicorn[standard]>=0.30",
+    "bandit>=1.9.4",
 ]
 faker = [
     "faker>=40.11.0",
@@ -160,10 +144,49 @@ llm = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/piighost"
+addopts = "-m 'not integration' -p no:anyio -p no:faker -p no:langsmith_plugin"
+testpaths = ["tests"]
+asyncio_mode = "auto"
 markers = [
-    "slow: marks tests that take more than a few seconds",
+    "integration: tests that load heavy optional dependencies (torch, transformers, gliner2, spacy). Deselected by default.",
 ]
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.pyrefly]
+# Examples in examples/graph/ and examples/llm/ live in their own environments
+# (uv sub-project and PEP 723 inline metadata respectively), so their deps are
+# not installed in the main venv and would otherwise show spurious
+# missing-import errors. Scratch scripts under scripts/ have bit-rotted and
+# reference removed APIs.
+project-excludes = [
+    "examples/graph/**",
+    "examples/llm/**",
+    ".claude/**",
+    "scripts/**",
+    "benchmarks/**",
+    "dist/**",
+    "site/**",
+]
+# Extra search paths for pyrefly:
+#  - ``examples`` lets the detector example package resolve ``from .common``.
+#  - the project root lets test files do ``from tests.conftest import ...``.
+search-path = ["examples", "."]
+
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    "benchmarks",
+    ".venv",
+    "examples/graph/.venv",
+    "examples/graph/front",
+    "site",
+    "dist",
+    "docs",
+    ".idea",
+    ".git",
+    ".cache",
+    ".pytest_cache",
+    ".ruff_cache",
+]

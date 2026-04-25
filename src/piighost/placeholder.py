@@ -4,14 +4,43 @@ from collections import defaultdict
 from collections.abc import Callable
 from typing import Protocol
 
+from typing_extensions import TypeVar
+
 from piighost.models import Entity
+from piighost.placeholder_tags import (
+    PlaceholderPreservation,
+    PreservesIdentityOnly,
+    PreservesLabel,
+    PreservesLabeledIdentityOpaque,
+    PreservesNothing,
+    PreservesShape,
+)
+
+PreservationT_co = TypeVar(
+    "PreservationT_co",
+    bound=PlaceholderPreservation,
+    default=PlaceholderPreservation,
+    covariant=True,
+)
+"""Phantom tag describing how much information a factory preserves.
+
+Defaults to :class:`PlaceholderPreservation` so that the legacy
+unparameterised ``AnyPlaceholderFactory`` annotation stays usable.
+Consumers that care about the level (anonymiser, pipeline,
+middleware) specialise the parameter.
+"""
 
 
-class AnyPlaceholderFactory(Protocol):
+class AnyPlaceholderFactory(Protocol[PreservationT_co]):
     """Protocol defining the interface for placeholder factories.
 
     A placeholder factory takes a list of entities and returns
     a mapping from each entity to its replacement token.
+
+    The generic parameter ``PreservationT_co`` is a phantom tag
+    declaring the information-preservation level of the tokens (see
+    :mod:`piighost.placeholder_tags`).  It lets downstream components
+    reject incompatible factories at type-check time.
     """
 
     def create(self, entities: list[Entity]) -> dict[Entity, str]:
@@ -26,19 +55,58 @@ class AnyPlaceholderFactory(Protocol):
         ...
 
 
-class CounterPlaceholderFactory:
-    """Factory that generates tokens like ``<<PERSON_1>>``, ``<<PERSON_2>>``.
+class RedactPlaceholderFactory(AnyPlaceholderFactory[PreservesNothing]):
+    """Factory that emits the same constant token for every entity.
 
-    Each entity gets a unique counter per label. Two different PERSON
-    entities get ``<<PERSON_1>>`` and ``<<PERSON_2>>``, while a LOCATION
-    entity gets ``<<LOCATION_1>>``.
+    The token is wrapped in ``<<...>>`` so it stays visually distinct
+    from natural text. Every entity collapses to the same string, so
+    the LLM learns *that* something was redacted but nothing about
+    its type, count, or relations.
+
+    Args:
+        value: The bare token text (without delimiters). Defaults to
+            ``"REDACT"``.
 
     Example:
         >>> from piighost.models import Detection, Entity, Span
-        >>> factory = CounterPlaceholderFactory()
+        >>> factory = RedactPlaceholderFactory()
         >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
         >>> factory.create([e])[e]
-        '<<PERSON_1>>'
+        '<<REDACT>>'
+    """
+
+    _token: str
+
+    def __init__(self, value: str = "REDACT") -> None:
+        self._token = f"<<{value}>>"
+
+    def create(self, entities: list[Entity]) -> dict[Entity, str]:
+        """Create the same constant token for all entities.
+
+        Args:
+            entities: The entities to create tokens for.
+
+        Returns:
+            A dict mapping every entity to the same token.
+        """
+        return {entity: self._token for entity in entities}
+
+
+class LabelCounterPlaceholderFactory(
+    AnyPlaceholderFactory[PreservesLabeledIdentityOpaque]
+):
+    """Factory that generates tokens like ``<<PERSON:1>>``, ``<<PERSON:2>>``.
+
+    Each entity gets a unique counter per label. Two different PERSON
+    entities get ``<<PERSON:1>>`` and ``<<PERSON:2>>``, while a LOCATION
+    entity gets ``<<LOCATION:1>>``.
+
+    Example:
+        >>> from piighost.models import Detection, Entity, Span
+        >>> factory = LabelCounterPlaceholderFactory()
+        >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
+        >>> factory.create([e])[e]
+        '<<PERSON:1>>'
     """
 
     def __init__(self): ...
@@ -50,7 +118,7 @@ class CounterPlaceholderFactory:
             entities: The entities to create tokens for.
 
         Returns:
-            A dict mapping each entity to a token like ``"<<PERSON_1>>"``.
+            A dict mapping each entity to a token like ``"<<PERSON:1>>"``.
         """
         result: dict[Entity, str] = {}
         counters: dict[str, int] = defaultdict(int)
@@ -58,41 +126,38 @@ class CounterPlaceholderFactory:
         for entity in entities:
             label = entity.label
             counters[label] += 1
-            result[entity] = f"<<{label}_{counters[label]}>>"
+            result[entity] = f"<<{label}:{counters[label]}>>"
 
         return result
 
 
-class HashPlaceholderFactory:
-    """Factory that generates tokens like ``<PERSON:a1b2c3d4>``.
+class LabelHashPlaceholderFactory(
+    AnyPlaceholderFactory[PreservesLabeledIdentityOpaque]
+):
+    """Factory that generates tokens like ``<<PERSON:a1b2c3d4>>``.
 
-    Uses SHA-256 of ``salt + canonical_text + label`` to produce a
-    deterministic, opaque token. Same entity + same salt always produces
-    the same hash. Different salts produce different hashes for
-    project-level isolation.
+    Uses SHA-256 of the canonical text + label to produce a deterministic,
+    opaque token. Same entity always produces the same hash. The double
+    angle brackets keep the token visually distinct from real text and
+    from any HTML/XML the LLM might generate.
 
     Args:
         hash_length: Number of hex characters to use from the hash.
             Defaults to 8.
-        salt: Optional project-scoped prefix mixed into the digest.
-            Empty string (the default) preserves legacy pre-Sprint-5
-            token values for backward compatibility.
 
     Example:
         >>> from piighost.models import Detection, Entity, Span
-        >>> factory = HashPlaceholderFactory()
+        >>> factory = LabelHashPlaceholderFactory()
         >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
         >>> token = factory.create([e])[e]
-        >>> token.startswith('<PERSON:') and token.endswith('>')
+        >>> token.startswith('<<PERSON:') and token.endswith('>>')
         True
     """
 
     _hash_length: int
-    _salt: str
 
-    def __init__(self, hash_length: int = 8, salt: str = "") -> None:
+    def __init__(self, hash_length: int = 8) -> None:
         self._hash_length = hash_length
-        self._salt = salt
 
     def create(self, entities: list[Entity]) -> dict[Entity, str]:
         """Create hash-based tokens for all entities.
@@ -101,25 +166,123 @@ class HashPlaceholderFactory:
             entities: The entities to create tokens for.
 
         Returns:
-            A dict mapping each entity to a token like ``"<PERSON:a1b2c3d4>"``.
+            A dict mapping each entity to a token like ``"<<PERSON:a1b2c3d4>>"``.
         """
         result: dict[Entity, str] = {}
 
         for entity in entities:
             canonical_text = entity.detections[0].text.lower()
             label = entity.label
-            if self._salt:
-                raw = f"{self._salt}:{canonical_text}:{label}"
-            else:
-                raw = f"{canonical_text}:{label}"
+            raw = f"{canonical_text}:{label}"
             digest = hashlib.sha256(raw.encode()).hexdigest()[: self._hash_length]
-            result[entity] = f"<{label}:{digest}>"
+            result[entity] = f"<<{label}:{digest}>>"
 
         return result
 
 
-class RedactPlaceholderFactory:
-    """Factory that generates tokens like ``<PERSON>``.
+class RedactCounterPlaceholderFactory(AnyPlaceholderFactory[PreservesIdentityOnly]):
+    """Factory that generates tokens like ``<<REDACT:1>>``, ``<<REDACT:2>>``.
+
+    Each entity gets a globally unique counter, regardless of label.
+    Two distinct PERSON entities get ``<<REDACT:1>>`` and ``<<REDACT:2>>``;
+    a LOCATION entity inserted between them gets ``<<REDACT:3>>``. The
+    label is not revealed; only the counter distinguishes entities.
+
+    Useful for archival redaction with traceable ids, or when you want
+    a label-less identity that is easier to read in logs than a hash.
+
+    Args:
+        prefix: Bare prefix before the counter. Defaults to ``"REDACT"``.
+
+    Example:
+        >>> from piighost.models import Detection, Entity, Span
+        >>> factory = RedactCounterPlaceholderFactory()
+        >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
+        >>> factory.create([e])[e]
+        '<<REDACT:1>>'
+    """
+
+    _prefix: str
+
+    def __init__(self, prefix: str = "REDACT") -> None:
+        self._prefix = prefix
+
+    def create(self, entities: list[Entity]) -> dict[Entity, str]:
+        """Create label-less counter tokens for all entities.
+
+        Args:
+            entities: The entities to create tokens for.
+
+        Returns:
+            A dict mapping each entity to a token like
+            ``"<<REDACT:1>>"``, ``"<<REDACT:2>>"``…
+        """
+        return {
+            entity: f"<<{self._prefix}:{counter}>>"
+            for counter, entity in enumerate(entities, start=1)
+        }
+
+
+class RedactHashPlaceholderFactory(AnyPlaceholderFactory[PreservesIdentityOnly]):
+    """Factory that generates tokens like ``<<REDACT:a1b2c3d4>>``.
+
+    Like :class:`LabelHashPlaceholderFactory` but **without** the
+    entity label in the token. Two distinct PERSON entities and two
+    distinct LOCATION entities all carry the ``REDACT:`` prefix; only
+    the hash distinguishes them. The LLM learns the entities are
+    different but cannot tell whether they are persons, emails, or
+    credit cards.
+
+    Useful for bias reduction (CV screening: same prefix erases the
+    gender / origin signal a name carries) and for sensitive types
+    where the type itself is a PII (medical category, clearance level).
+
+    Args:
+        prefix: Bare prefix before the hash. Defaults to ``"REDACT"``.
+        hash_length: Number of hex characters from the SHA-256 digest.
+            Defaults to ``8``.
+
+    Example:
+        >>> from piighost.models import Detection, Entity, Span
+        >>> factory = RedactHashPlaceholderFactory()
+        >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
+        >>> token = factory.create([e])[e]
+        >>> token.startswith('<<REDACT:') and token.endswith('>>')
+        True
+    """
+
+    _prefix: str
+    _hash_length: int
+
+    def __init__(self, prefix: str = "REDACT", hash_length: int = 8) -> None:
+        self._prefix = prefix
+        self._hash_length = hash_length
+
+    def create(self, entities: list[Entity]) -> dict[Entity, str]:
+        """Create label-less hash tokens for all entities.
+
+        Args:
+            entities: The entities to create tokens for.
+
+        Returns:
+            A dict mapping each entity to a token like
+            ``"<<REDACT:a1b2c3d4>>"``.
+        """
+        result: dict[Entity, str] = {}
+
+        for entity in entities:
+            # Hash on (text + label) so two entities with the same
+            # surface text but different labels still get distinct ids.
+            canonical_text = entity.detections[0].text.lower()
+            raw = f"{canonical_text}:{entity.label}"
+            digest = hashlib.sha256(raw.encode()).hexdigest()[: self._hash_length]
+            result[entity] = f"<<{self._prefix}:{digest}>>"
+
+        return result
+
+
+class LabelPlaceholderFactory(AnyPlaceholderFactory[PreservesLabel]):
+    """Factory that generates tokens like ``<<PERSON>>``.
 
     All entities with the same label share the same token there is
     no discrimination between different PIIs of the same type.
@@ -128,10 +291,10 @@ class RedactPlaceholderFactory:
 
     Example:
         >>> from piighost.models import Detection, Entity, Span
-        >>> factory = RedactPlaceholderFactory()
+        >>> factory = LabelPlaceholderFactory()
         >>> e = Entity(detections=(Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),))
         >>> factory.create([e])[e]
-        '<PERSON>'
+        '<<PERSON>>'
     """
 
     def __init__(self): ...
@@ -143,9 +306,9 @@ class RedactPlaceholderFactory:
             entities: The entities to create tokens for.
 
         Returns:
-            A dict mapping each entity to a token like ``"<PERSON>"``.
+            A dict mapping each entity to a token like ``"<<PERSON>>"``.
         """
-        return {entity: f"<{entity.label}>" for entity in entities}
+        return {entity: f"<<{entity.label}>>" for entity in entities}
 
 
 MaskFn = Callable[[str, str], str]
@@ -214,7 +377,7 @@ def _build_default_strategies(mask_char: str, visible_chars: int) -> dict[str, M
     return strategies
 
 
-class MaskPlaceholderFactory:
+class MaskPlaceholderFactory(AnyPlaceholderFactory[PreservesShape]):
     """Factory that generates partially masked tokens preserving some original characters.
 
     Uses a configurable ``strategies`` mapping from label (lowercase) to

@@ -1,5 +1,8 @@
 ---
 icon: lucide/link
+tags:
+  - LangChain
+  - Middleware
 ---
 
 # LangChain integration
@@ -60,7 +63,7 @@ flowchart TB
 
 ## Full example
 
-```python
+```python title="agent.py" linenums="1" hl_lines="91 101"
 from dotenv import load_dotenv
 from gliner2 import GLiNER2
 from langchain.agents import create_agent
@@ -72,7 +75,7 @@ from piighost.linker.entity import ExactEntityLinker
 from piighost.resolver import MergeEntityConflictResolver, ConfidenceSpanConflictResolver
 from piighost.middleware import PIIAnonymizationMiddleware
 from piighost.pipeline import ThreadAnonymizationPipeline
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 
 load_dotenv()
 
@@ -138,7 +141,7 @@ entity_linker = ExactEntityLinker()
 entity_resolver = MergeEntityConflictResolver()
 span_resolver = ConfidenceSpanConflictResolver()
 
-ph_factory = CounterPlaceholderFactory()
+ph_factory = LabelCounterPlaceholderFactory()
 anonymizer = Anonymizer(ph_factory=ph_factory)
 
 detector = Gliner2Detector(
@@ -239,7 +242,7 @@ flowchart LR
 
 ## Using the agent
 
-```python
+```python title="main.py"
 import asyncio
 
 async def main():

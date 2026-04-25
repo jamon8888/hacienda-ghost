@@ -4,6 +4,38 @@ icon: lucide/shield
 
 # PIIGhost
 
+`piighost` est une bibliothèque Python qui détecte, anonymise et désanonymise automatiquement les entités sensibles (noms, lieux, numéros de compte…) dans les conversations d'agents IA. Son middleware LangChain s'intègre dans LangGraph sans modifier votre code existant : le LLM ne voit que des placeholders, les outils reçoivent les vraies valeurs, l'utilisateur voit la réponse désanonymisée.
+
+## Cas d'usage
+
+Cinq familles de scénarios où `piighost` trouve naturellement sa place, du plus défensif (protéger l'utilisateur) au plus intégré (agents outillés).
+
+**1. Protéger l'utilisateur face aux providers LLM tiers.** Les APIs cloud peuvent stocker, croiser et exploiter les PII : profilage commercial, réquisition légale, entraînement sur les conversations, ciblage de journalistes, de lanceurs d'alerte ou de politiques.
+
+*Exemple : assistant médical grand public dont les conversations ne doivent pas quitter votre infrastructure avec le nom du patient.*
+
+**2. Extraction structurée sans fuite dans le JSON.** Quand un LLM extrait des champs vers un schéma, les PII réapparaissent telles quelles en sortie. Avec `piighost`, le modèle manipule uniquement des placeholders ; la désanonymisation restaure les vraies valeurs côté client.
+
+*Exemple : extraction d'un acte notarial vers un JSON (parties, biens, montants) sans que le LLM ait accès aux identités réelles.*
+
+**3. Caviardage de documents.** Produire une version publiable d'un document confidentiel en protégeant les personnes physiques, tout en gardant un texte lisible et exploitable.
+
+*Exemple : anonymiser un jugement avant diffusion open-access.*
+
+**4. RAG d'entreprise sur documents privés.** Un RAG classique sur un LLM cloud vous cantonne de fait aux documents déjà publics : dès qu'on y verse un contrat interne, un dossier RH ou une note stratégique, le provider l'ingère. En anonymisant les chunks récupérés avant l'envoi au modèle, vous pouvez indexer des documents réellement privés tout en gardant un LLM hébergé.
+
+*Exemple : base documentaire juridique interne (contrats, jurisprudence annotée) interrogée via un LLM cloud sans que noms de clients, montants ou clauses sensibles ne quittent votre infrastructure.*
+
+**5. Agents avec outils internes.** Le LLM raisonne sur des placeholders, les outils (CRM, email, DB) reçoivent les vraies valeurs au moment de l'appel. Le modèle ne voit jamais les PII, les outils fonctionnent normalement.
+
+*Exemple : agent commercial qui consulte le CRM et envoie un email sans que le LLM ait lu les noms des clients.*
+
+**6. Réduction des biais.** Les LLM héritent des biais présents dans leurs données d'entraînement (genre, origine, âge). Anonymiser un prénom, un nom ou un lieu avant d'envoyer un texte au modèle évite que ces biais n'influencent une décision : le LLM ne juge plus que le contenu.
+
+*Exemple : tri de CV où prénoms, noms et adresses sont remplacés par des placeholders pour neutraliser les biais discriminatoires sur le profil du candidat.*
+
+---
+
 ## Problématiques
 
 Aujourd'hui, avec l'essor des LLM, la question de la protection des données sensibles prend une nouvelle dimension. Les
@@ -40,11 +72,18 @@ Chaque approche a ses failles propres, et les modèles NER en ajoutent quelques-
 Même en corrigeant ces défauts, il reste plusieurs problèmes de fond :
 
 - **Cohérence des placeholders** : toutes les occurrences d'un même PII doivent être anonymisées de la même manière
-  (ex. `<<PERSON_1>>` pour « Patrick » dans tout le texte), afin de préserver l'information qu'il s'agit de la même
-  entité tout en protégeant la confidentialité.
+  (ex. `<<PERSON:1>>`{ .placeholder } pour `Patrick`{ .pii } dans tout le texte), afin de préserver l'information
+  qu'il s'agit de la même entité tout en protégeant la confidentialité.
 - **Liaison floue** : il faut pouvoir lier des détections qui ne sont pas strictement identiques, par exemple
-  « Patrick » et « patrick » (différence de casse), « Patric » (faute d'orthographe), ou encore mention complète
-  vs partielle (« Patrick Dupont » et « Patrick »).
+  `Patrick`{ .pii } et `patrick`{ .pii } (différence de casse), `Patric`{ .pii } (faute d'orthographe), ou encore
+  mention complète vs partielle (`Patrick Dupont`{ .pii } et `Patrick`{ .pii }).
+
+`piighost` adresse chacun de ces problèmes via trois composants du pipeline (résolution de spans, liaison
+d'entités, fusion d'entités). Chaque composant a une **contrepartie** : la résolution de spans peut écarter
+une détection légitime sur un faux conflit, la liaison floue peut grouper à tort deux entités distinctes, etc.
+Si vos détections sont déjà propres (ou si vous préférez gérer ces cas vous-même), chaque composant est
+**désactivable individuellement** via une instance `Disabled*` qui le transforme en passe-plat. Voir
+[Étendre PIIGhost](extending.md) pour le détail de chaque section.
 
 ### Le cas conversationnel (agents IA)
 
@@ -65,8 +104,8 @@ Pour utiliser l'anonymisation dans des agents IA, plusieurs contraintes supplém
 `piighost` combine les briques existantes pour offrir une détection et une anonymisation des PII à la fois précises,
 cohérentes et faciles à intégrer :
 
-- **Détection hybride** : composez modèles NER (GLiNER2) et regex via `CompositeDetector` pour tirer parti des
-  deux mondes.
+- **Détection hybride** : composez un ou plusieurs NER (GLiNER2, spaCy, Transformers…) et des regex via
+  `CompositeDetector` pour tirer parti des deux mondes.
 - **Liaison d'entités** : regroupe automatiquement les variantes (casse, fautes, mentions partielles) pour
   garantir des placeholders cohérents.
 - **Anonymisation bidirectionnelle** : chaque anonymisation est cachée et peut être inversée à la volée, y compris
@@ -101,24 +140,6 @@ Voir [Architecture](architecture.md) pour les détails de chaque étape.
 
 ---
 
-## Fonctionnalités
-
-- **Détection** : détectez les PII avec un modèle NER (GLiNER2), des regex, ou une composition des deux via
-  `CompositeDetector`.
-- **Résolution de spans** : résout les conflits de spans détectés (chevauchement, imbrication) pour garantir des
-  entités propres et non redondantes, surtout avec plusieurs détecteurs.
-- **Liaison d'entités** : lie les différentes détections, avec tolérance aux fautes d'orthographe et capture des
-  mentions qu'un modèle NER pourrait manquer.
-- **Résolution d'entités** : résout les conflits d'entités liées (par exemple un détecteur détecte `A` et `B`
-  comme une même entité, un autre lie `B` et `C`) pour garantir des entités finales cohérentes.
-- **Anonymisation réversible** : remplace les entités détectées par des placeholders personnalisables
-  (`<<PERSON_1>>`, `<<LOCATION_1>>`) et conserve le mapping dans un cache pour pouvoir désanonymiser.
-- **Placeholder Factory** : point d'extension pour la stratégie de nommage (compteurs, UUID, schémas personnalisés).
-- **Middleware LangChain** : intégrez `piighost` dans vos agents LangGraph pour une anonymisation transparente
-  avant et après chaque appel modèle, sans modifier votre code d'agent.
-
----
-
 ## Pourquoi pas une solution existante ?
 
 D'autres librairies couvrent une partie du périmètre :
@@ -140,16 +161,16 @@ Le différenciateur de `piighost` : **la liaison persistante inter-messages** et
 
 Entrée :
 
-> Patrick habite à Paris. Patrick adore Paris.
+> `Patrick`{ .pii } habite à `Paris`{ .pii }. `Patrick`{ .pii } adore `Paris`{ .pii }.
 
 Sortie :
 
-> `<<PERSON_1>>` habite à `<<LOCATION_1>>`. `<<PERSON_1>>` adore `<<LOCATION_1>>`.
+> `<<PERSON:1>>`{ .placeholder } habite à `<<LOCATION:1>>`{ .placeholder }. `<<PERSON:1>>`{ .placeholder } adore `<<LOCATION:1>>`{ .placeholder }.
 
-Les deux occurrences de « Patrick » sont reliées, idem pour « Paris ». Dans une conversation, les messages suivants
-réutilisent les mêmes placeholders, et la désanonymisation est automatique pour l'utilisateur final.
+Les deux occurrences de `Patrick`{ .pii } sont reliées, idem pour `Paris`{ .pii }. Dans une conversation, les
+messages suivants réutilisent les mêmes placeholders, et la désanonymisation est automatique pour l'utilisateur final.
 
-Pour l'installation et le premier exemple complet, voir [Démarrage rapide](getting-started.md).
+Pour l'installation et le premier exemple complet, voir [Installation](getting-started/installation.md) puis [Premier pipeline](getting-started/first-pipeline.md).
 
 ---
 
@@ -157,14 +178,65 @@ Pour l'installation et le premier exemple complet, voir [Démarrage rapide](gett
 
 Chaque page suit un rôle précis du [framework Diátaxis](https://diataxis.fr/) : tutoriel pour apprendre, how-to pour résoudre une tâche, référence pour consulter l'API, explication pour comprendre les choix de design.
 
-| Section                                                 | Rôle et contenu                                                |
-|---------------------------------------------------------|----------------------------------------------------------------|
-| [Démarrage rapide](getting-started.md)                  | **Tutoriel** : installation et premiers pas                    |
-| [Architecture](architecture.md)                         | **Explication** : pipeline et diagrammes de flux               |
-| [Usage basique](examples/basic.md)                      | **Tutoriel** : usages standalone de la bibliothèque            |
-| [Intégration LangChain](examples/langchain.md)          | **Tutoriel avancé** : agent complet avec middleware            |
-| [Utiliser les détecteurs prêts à l'emploi](examples/detectors.md) | **How-to** : recettes de composition des patterns regex      |
-| [Tests](examples/testing.md)                            | **How-to** : tester unitairement pipelines et composants       |
-| [Référence Détecteurs](reference/detectors.md)          | **Référence** : catalogue des patterns (Communs, US, Europe)   |
-| [Étendre PIIGhost](extending.md)                        | **How-to** : créer ses propres modules                         |
-| [Référence API](reference/anonymizer.md)                | **Référence** : documentation complète de l'API                |
+<div class="grid cards" markdown>
+
+-   :lucide-rocket: __Démarrer__
+
+    ---
+
+    Installer et prendre piighost en main.
+
+    - [Installation](getting-started/installation.md)
+    - [Quickstart](getting-started/quickstart.md)
+    - [Premier pipeline](getting-started/first-pipeline.md)
+    - [Pipeline conversationnel](getting-started/conversation.md)
+    - [Middleware LangChain](getting-started/langchain.md)
+    - [Client distant](getting-started/api-client.md)
+    - [Usage basique](examples/basic.md)
+
+-   :lucide-wrench: __Usage__
+
+    ---
+
+    Recettes ciblées pour un cas d'usage.
+
+    - [Intégration LangChain](examples/langchain.md)
+    - [Détecteurs prêts à l'emploi](examples/detectors.md)
+    - [Étendre PIIGhost](extending.md)
+    - [Tests](examples/testing.md)
+    - [Déploiement](deployment.md)
+
+-   :lucide-book-open: __Référence__
+
+    ---
+
+    La documentation d'API complète.
+
+    - [Anonymizer](reference/anonymizer.md)
+    - [Pipeline](reference/pipeline.md)
+    - [Middleware](reference/middleware.md)
+    - [Détecteurs](reference/detectors.md)
+
+-   :lucide-layers: __Concepts__
+
+    ---
+
+    Comprendre les choix de design.
+
+    - [Architecture](architecture.md)
+    - [Glossaire](glossary.md)
+    - [Limites](limitations.md)
+    - [Sécurité](security.md)
+
+-   :lucide-users: __Communauté__
+
+    ---
+
+    Participer, signaler, échanger.
+
+    - [Contribuer](community/contributing.md)
+    - [Code de conduite](community/code-of-conduct.md)
+    - [Signaler un bug](community/bug-reports.md)
+    - [FAQ](community/faq.md)
+
+</div>

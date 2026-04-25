@@ -91,3 +91,21 @@ class TestFakerPlaceholderFactory:
 
     def test_empty_list(self) -> None:
         assert FakerPlaceholderFactory().create([]) == {}
+
+    def test_preservation_tag_is_labeled_identity_faker(self) -> None:
+        from piighost.placeholder_tags import (
+            PreservesIdentity,
+            PreservesLabel,
+            PreservesLabeledIdentity,
+            PreservesLabeledIdentityFaker,
+            PreservesLabeledIdentityRealistic,
+            get_preservation_tag,
+        )
+
+        tag = get_preservation_tag(FakerPlaceholderFactory())
+        assert tag is PreservesLabeledIdentityFaker
+        assert issubclass(tag, PreservesLabeledIdentityRealistic)
+        assert issubclass(tag, PreservesLabeledIdentity)
+        # multi-inheritance: also a label tag and an identity tag
+        assert issubclass(tag, PreservesLabel)
+        assert issubclass(tag, PreservesIdentity)

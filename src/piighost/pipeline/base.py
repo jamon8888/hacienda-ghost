@@ -1,254 +1,233 @@
 import importlib.util
-from typing import Tuple
+from typing import Generic, Tuple
 
-_HAS_AIOCACHE = importlib.util.find_spec("aiocache") is not None
+from typing_extensions import TypeVar
 
-if not _HAS_AIOCACHE:
-    class AnonymizationPipeline:  # type: ignore[no-redef]
-        """Stub: requires the ``piighost[cache]`` extra."""
-
-        def __init__(self, *args: object, **kwargs: object) -> None:  # noqa: ANN401
-            raise ImportError(
-                "AnonymizationPipeline requires aiocache for caching."
-                " Install with `uv add piighost[cache]`."
-            )
-
-else:
-    from aiocache import BaseCache, Cache
-
-    from piighost.anonymizer import AnyAnonymizer
-    from piighost.detector import AnyDetector
-    from piighost.exceptions import CacheMissError
-    from piighost.linker.entity import AnyEntityLinker, ExactEntityLinker
-    from piighost.models import Detection, Entity, Span
-    from piighost.placeholder import AnyPlaceholderFactory
-    from piighost.resolver.entity import (
-        AnyEntityConflictResolver,
-        MergeEntityConflictResolver,
+if importlib.util.find_spec("aiocache") is None:
+    raise ImportError(
+        "AnonymizationPipeline requires aiocache for caching. Install with `uv add piighost[cache]`."
     )
-    from piighost.resolver.span import (
-        AnySpanConflictResolver,
-        ConfidenceSpanConflictResolver,
-    )
-    from piighost.utils import hash_sha256
 
-    class AnonymizationPipeline:
-        """Orchestrates the full anonymization pipeline.
+from aiocache import BaseCache, SimpleMemoryCache
 
-        Chains all components together: detect → resolve spans → link entities
-        → resolve entities → anonymize. Uses aiocache for:
-        - Detector results (avoid expensive NER re-computation)
-        - Anonymization mappings (allow deanonymize without passing entities)
+from piighost.anonymizer import AnyAnonymizer
+from piighost.detector import AnyDetector
+from piighost.exceptions import CacheMissError
+from piighost.linker.entity import AnyEntityLinker, ExactEntityLinker
+from piighost.models import Detection, Entity
+from piighost.placeholder import AnyPlaceholderFactory
+from piighost.placeholder_tags import PlaceholderPreservation
+from piighost.resolver.entity import (
+    AnyEntityConflictResolver,
+    MergeEntityConflictResolver,
+)
+from piighost.resolver.span import (
+    AnySpanConflictResolver,
+    ConfidenceSpanConflictResolver,
+)
+from piighost.utils import hash_sha256
 
-        Cache keys use prefixes to avoid collisions:
-        - ``detect:<hash>`` detector results
-        - ``anon:anonymized:<hash>`` anonymized text → (original, entities)
+PreservationT = TypeVar(
+    "PreservationT",
+    bound=PlaceholderPreservation,
+    default=PlaceholderPreservation,
+)
+"""Preservation tag carried by the pipeline's anonymiser factory."""
+
+CACHE_KEY_DETECTION = "detect"
+"""Prefix for detector-result cache entries."""
+
+CACHE_KEY_ANONYMIZATION = "anon:anonymized"
+"""Prefix for anonymized-text → (original, entities) cache entries."""
+
+
+class AnonymizationPipeline(Generic[PreservationT]):
+    """Orchestrates the full anonymization pipeline.
+
+    Chains all components together: detect → resolve spans → link entities
+    → resolve entities → anonymize. Uses aiocache for:
+    - Detector results (avoid expensive NER re-computation)
+    - Anonymization mappings (allow deanonymize without passing entities)
+
+    Cache keys use prefixes to avoid collisions:
+    - ``detect:<hash>`` detector results
+    - ``anon:anonymized:<hash>`` anonymized text → (original, entities)
+
+    Args:
+        detector: The entity detector (async).
+        span_resolver: Resolves overlapping detection spans.
+        entity_linker: Expands and groups detections into entities.
+        entity_resolver: Merges conflicting entities.
+        anonymizer: Performs text replacement and deanonymization.
+        cache: Optional aiocache instance. If ``None``, no caching
+            is performed and deanonymize will raise KeyError.
+        cache_ttl: Time-to-live in seconds applied to every cache entry
+            the pipeline writes.  ``None`` (default) keeps entries until
+            the backend evicts them, which is fine for in-memory caches
+            but can leak unbounded state when sharing a Redis backend
+            across threads.
+    """
+
+    _detector: AnyDetector
+    _span_resolver: AnySpanConflictResolver
+    _entity_linker: AnyEntityLinker
+    _entity_resolver: AnyEntityConflictResolver
+    _anonymizer: AnyAnonymizer[PreservationT]
+    _cache: BaseCache
+    _cache_ttl: int | None
+
+    def __init__(
+        self,
+        detector: AnyDetector,
+        anonymizer: AnyAnonymizer[PreservationT],
+        span_resolver: AnySpanConflictResolver | None = None,
+        entity_linker: AnyEntityLinker | None = None,
+        entity_resolver: AnyEntityConflictResolver | None = None,
+        cache: BaseCache | None = None,
+        cache_ttl: int | None = None,
+    ) -> None:
+        span_resolver = span_resolver or ConfidenceSpanConflictResolver()
+        entity_linker = entity_linker or ExactEntityLinker()
+        entity_resolver = entity_resolver or MergeEntityConflictResolver()
+
+        self._detector = detector
+        self._span_resolver = span_resolver
+        self._entity_linker = entity_linker
+        self._entity_resolver = entity_resolver
+        self._anonymizer = anonymizer
+        self._cache = cache or SimpleMemoryCache()
+        self._cache_ttl = cache_ttl
+
+    @property
+    def ph_factory(self) -> AnyPlaceholderFactory[PreservationT]:
+        """The placeholder factory used by the anonymizer."""
+        return self._anonymizer.ph_factory
+
+    async def detect_entities(self, text: str) -> list[Entity]:
+        """Run the detection pipeline: detect → resolve → link → resolve.
 
         Args:
-            detector: The entity detector (async).
-            span_resolver: Resolves overlapping detection spans.
-            entity_linker: Expands and groups detections into entities.
-            entity_resolver: Merges conflicting entities.
-            anonymizer: Performs text replacement and deanonymization.
-            cache: Optional aiocache instance. If ``None``, no caching
-                is performed and deanonymize will raise KeyError.
+            text: The text to analyze.
+
+        Returns:
+            Resolved and merged entities found in the text.
         """
+        detections = await self._cached_detect(text)
+        detections = self._span_resolver.resolve(detections)
+        entities = self._entity_linker.link(text, detections)
+        return self._entity_resolver.resolve(entities)
 
-        _detector: AnyDetector
-        _span_resolver: AnySpanConflictResolver
-        _entity_linker: AnyEntityLinker
-        _entity_resolver: AnyEntityConflictResolver
-        _anonymizer: AnyAnonymizer
-        _cache: BaseCache
+    async def anonymize(self, text: str) -> Tuple[str, list[Entity]]:
+        """Run the full pipeline: detect → resolve → link → resolve → anonymize.
 
-        def __init__(
-            self,
-            detector: AnyDetector,
-            anonymizer: AnyAnonymizer,
-            span_resolver: AnySpanConflictResolver | None = None,
-            entity_linker: AnyEntityLinker | None = None,
-            entity_resolver: AnyEntityConflictResolver | None = None,
-            cache: BaseCache | None = None,
-        ) -> None:
-            span_resolver = span_resolver or ConfidenceSpanConflictResolver()
-            entity_linker = entity_linker or ExactEntityLinker()
-            entity_resolver = entity_resolver or MergeEntityConflictResolver()
+        Args:
+            text: The original text to anonymize.
 
-            self._detector = detector
-            self._span_resolver = span_resolver
-            self._entity_linker = entity_linker
-            self._entity_resolver = entity_resolver
-            self._anonymizer = anonymizer
-            self._cache = cache or Cache(Cache.MEMORY)
+        Returns:
+            A tuple of (anonymized text, entities used for anonymization).
+        """
+        entities = await self.detect_entities(text)
 
-        @property
-        def ph_factory(self) -> "AnyPlaceholderFactory":
-            """The placeholder factory used by the anonymizer."""
-            return self._anonymizer.ph_factory
+        # Replace detections with placeholder tokens.
+        anonymized = self._anonymizer.anonymize(text, entities)
 
-        async def detect_entities(self, text: str) -> list[Entity]:
-            """Run the detection pipeline: detect → resolve → link → resolve.
+        # Store both directions for deanonymization lookup.
+        await self._store_mapping(text, anonymized, entities)
 
-            Args:
-                text: The text to analyze.
+        return anonymized, entities
 
-            Returns:
-                Resolved and merged entities found in the text.
-            """
-            detections = await self._cached_detect(text)
-            detections = self._span_resolver.resolve(detections)
-            entities = self._entity_linker.link(text, detections)
-            return self._entity_resolver.resolve(entities)
+    async def deanonymize(self, anonymized_text: str) -> Tuple[str, list[Entity]]:
+        """Deanonymize using the anonymized text as lookup key.
 
-        async def anonymize(self, text: str) -> Tuple[str, list[Entity]]:
-            """Run the full pipeline: detect → resolve → link → resolve → anonymize.
+        Args:
+            anonymized_text: The anonymized text to restore.
 
-            Args:
-                text: The original text to anonymize.
+        Returns:
+            The restored original text.
 
-            Returns:
-                A tuple of (anonymized text, entities used for anonymization).
-            """
-            entities = await self.detect_entities(text)
+        Raises:
+            KeyError: If the anonymized text was never produced by this pipeline.
+        """
+        key = f"{CACHE_KEY_ANONYMIZATION}:{hash_sha256(anonymized_text)}"
+        cached = await self._cache_get(key)
 
-            # Replace detections with placeholder tokens.
-            anonymized = self._anonymizer.anonymize(text, entities)
+        if cached is None:
+            raise CacheMissError(f"No anonymization mapping cached for hash {key!r}")
 
-            # Store both directions for deanonymization lookup.
-            await self._store_mapping(text, anonymized, entities)
+        entities = self._deserialize_entities(cached["entities"])
+        result = self._anonymizer.deanonymize(anonymized_text, entities)
+        return result, entities
 
-            return anonymized, entities
+    # ------------------------------------------------------------------
+    # Cache helpers
+    # ------------------------------------------------------------------
 
-        async def deanonymize(self, anonymized_text: str) -> Tuple[str, list[Entity]]:
-            """Deanonymize using the anonymized text as lookup key.
+    async def _store_mapping(
+        self,
+        original: str,
+        anonymized: str,
+        entities: list[Entity],
+    ) -> None:
+        """Store the anonymization mapping in cache (both directions)."""
+        if self._cache is None:
+            return
 
-            Args:
-                anonymized_text: The anonymized text to restore.
+        serialized_entities = self._serialize_entities(entities)
+        key = f"{CACHE_KEY_ANONYMIZATION}:{hash_sha256(anonymized)}"
 
-            Returns:
-                The restored original text.
+        await self._cache.set(
+            key,
+            {
+                "original": original,
+                "entities": serialized_entities,
+            },
+            ttl=self._cache_ttl,
+        )
 
-            Raises:
-                KeyError: If the anonymized text was never produced by this pipeline.
-            """
-            key = f"anon:anonymized:{hash_sha256(anonymized_text)}"
-            cached = await self._cache_get(key)
+    async def _cached_detect(self, text: str) -> list[Detection]:
+        """Detect entities, using cache if available."""
+        if self._cache is None:
+            return await self._detector.detect(text)
 
-            if cached is None:
-                raise CacheMissError(f"No anonymization mapping cached for hash {key!r}")
+        cache_key = f"{CACHE_KEY_DETECTION}:{hash_sha256(text)}"
+        cached = await self._cache.get(cache_key)
 
-            entities = self._deserialize_entities(cached["entities"])
-            result = self._anonymizer.deanonymize(anonymized_text, entities)
-            return result, entities
+        if cached is not None:
+            return self._deserialize_detections(cached)
 
-        # ------------------------------------------------------------------
-        # Cache helpers
-        # ------------------------------------------------------------------
+        detections = await self._detector.detect(text)
+        value = self._serialize_detections(detections)
+        await self._cache.set(cache_key, value, ttl=self._cache_ttl)
+        return detections
 
-        async def _store_mapping(
-            self,
-            original: str,
-            anonymized: str,
-            entities: list[Entity],
-        ) -> None:
-            """Store the anonymization mapping in cache (both directions)."""
-            if self._cache is None:
-                return
+    async def _cache_get(self, key: str) -> dict | None:
+        """Get a value from cache, or None if no cache or key missing."""
+        if self._cache is None:
+            return None
+        result = await self._cache.get(key)
+        return result
 
-            serialized_entities = self._serialize_entities(entities)
-            key = f"anon:anonymized:{hash_sha256(anonymized)}"
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
 
-            await self._cache.set(
-                key,
-                {
-                    "original": original,
-                    "entities": serialized_entities,
-                },
-            )
+    @staticmethod
+    def _serialize_detections(detections: list[Detection]) -> list[dict]:
+        return [d.to_dict() for d in detections]
 
-        async def _cached_detect(self, text: str) -> list[Detection]:
-            """Detect entities, using cache if available."""
-            if self._cache is None:
-                return await self._detector.detect(text)
+    @staticmethod
+    def _deserialize_detections(data: list[dict]) -> list[Detection]:
+        return [Detection.from_dict(d) for d in data]
 
-            cache_key = f"detect:{hash_sha256(text)}"
-            cached = await self._cache.get(cache_key)
+    @staticmethod
+    def _serialize_entities(entities: list[Entity]) -> list[list[dict]]:
+        """Serialize entities as a list of detection lists."""
+        return [[d.to_dict() for d in entity.detections] for entity in entities]
 
-            if cached is not None:
-                return self._deserialize_detections(cached)
-
-            detections = await self._detector.detect(text)
-            value = self._serialize_detections(detections)
-            await self._cache.set(cache_key, value)
-            return detections
-
-        async def _cache_get(self, key: str) -> dict | None:
-            """Get a value from cache, or None if no cache or key missing."""
-            if self._cache is None:
-                return None
-            result = await self._cache.get(key)
-            return result
-
-        # ------------------------------------------------------------------
-        # Serialization
-        # ------------------------------------------------------------------
-
-        @staticmethod
-        def _serialize_detections(detections: list[Detection]) -> list[dict]:
-            return [
-                {
-                    "text": d.text,
-                    "label": d.label,
-                    "start": d.position.start_pos,
-                    "end": d.position.end_pos,
-                    "confidence": d.confidence,
-                }
-                for d in detections
-            ]
-
-        @staticmethod
-        def _deserialize_detections(data: list[dict]) -> list[Detection]:
-            return [
-                Detection(
-                    text=d["text"],
-                    label=d["label"],
-                    position=Span(start_pos=d["start"], end_pos=d["end"]),
-                    confidence=d["confidence"],
-                )
-                for d in data
-            ]
-
-        @staticmethod
-        def _serialize_entities(entities: list[Entity]) -> list[list[dict]]:
-            """Serialize entities as a list of detection lists."""
-            return [
-                [
-                    {
-                        "text": d.text,
-                        "label": d.label,
-                        "start": d.position.start_pos,
-                        "end": d.position.end_pos,
-                        "confidence": d.confidence,
-                    }
-                    for d in entity.detections
-                ]
-                for entity in entities
-            ]
-
-        @staticmethod
-        def _deserialize_entities(data: list[list[dict]]) -> list[Entity]:
-            """Deserialize entities from a list of detection lists."""
-            return [
-                Entity(
-                    detections=tuple(
-                        Detection(
-                            text=d["text"],
-                            label=d["label"],
-                            position=Span(start_pos=d["start"], end_pos=d["end"]),
-                            confidence=d["confidence"],
-                        )
-                        for d in detections
-                    )
-                )
-                for detections in data
-            ]
+    @staticmethod
+    def _deserialize_entities(data: list[list[dict]]) -> list[Entity]:
+        """Deserialize entities from a list of detection lists."""
+        return [
+            Entity(detections=tuple(Detection.from_dict(d) for d in detections))
+            for detections in data
+        ]

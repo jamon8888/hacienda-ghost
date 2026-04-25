@@ -30,17 +30,17 @@ Replaces each detection in `text` with its entity's token. Replacements are appl
 
 ```python
 from piighost.anonymizer import Anonymizer
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 from piighost.models import Detection, Entity, Span
 
-anonymizer = Anonymizer(CounterPlaceholderFactory())
+anonymizer = Anonymizer(LabelCounterPlaceholderFactory())
 
 entity = Entity(detections=(
     Detection(text="Patrick", label="PERSON", position=Span(0, 7), confidence=0.9),
 ))
 
 result = anonymizer.anonymize("Patrick is nice", [entity])
-# '<<PERSON_1>> is nice'
+# '<<PERSON:1>> is nice'
 ```
 
 | Parameter | Type | Description |
@@ -55,7 +55,7 @@ result = anonymizer.anonymize("Patrick is nice", [entity])
 Restores the original text by replacing tokens with original detection texts, using the original positions to handle entities with multiple spelling variants.
 
 ```python
-original = anonymizer.deanonymize("<<PERSON_1>> is nice", [entity])
+original = anonymizer.deanonymize("<<PERSON:1>> is nice", [entity])
 # 'Patrick is nice'
 ```
 
@@ -185,51 +185,51 @@ class AnyPlaceholderFactory(Protocol):
     def create(self, entities: list[Entity]) -> dict[Entity, str]: ...
 ```
 
-### `CounterPlaceholderFactory`
+### `LabelCounterPlaceholderFactory`
 
-Default implementation: generates sequential `<<LABEL_N>>` tags.
+Default implementation: generates sequential `<<LABEL:N>>` tags.
 
 ```python
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 from piighost.models import Detection, Entity, Span
 
-factory = CounterPlaceholderFactory()
+factory = LabelCounterPlaceholderFactory()
 person = Entity(detections=(Detection("Patrick", "PERSON", Span(0, 7), 0.9),))
 location = Entity(detections=(Detection("Paris", "LOCATION", Span(17, 22), 0.9),))
 
 tokens = factory.create([person, location])
-# {person: '<<PERSON_1>>', location: '<<LOCATION_1>>'}
+# {person: '<<PERSON:1>>', location: '<<LOCATION:1>>'}
 ```
 
-### `HashPlaceholderFactory`
+### `LabelHashPlaceholderFactory`
 
 Generates deterministic, opaque hash-based tags.
 
 ```python
-from piighost.placeholder import HashPlaceholderFactory
+from piighost.placeholder import LabelHashPlaceholderFactory
 
-factory = HashPlaceholderFactory(hash_length=8)
+factory = LabelHashPlaceholderFactory(hash_length=8)
 tokens = factory.create([person])
-# {person: '<PERSON:a1b2c3d4>'}
+# {person: '<<PERSON:a1b2c3d4>>'}
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `hash_length` | `8` | Number of hex characters from the SHA-256 digest |
 
-### `RedactPlaceholderFactory`
+### `LabelPlaceholderFactory`
 
-All entities with the same label share the same `<LABEL>` token. No counter, no distinction between entities.
+All entities with the same label share the same `<<LABEL>>` token. No counter, no distinction between entities.
 
 ```python
-from piighost.placeholder import RedactPlaceholderFactory
+from piighost.placeholder import LabelPlaceholderFactory
 
-factory = RedactPlaceholderFactory()
+factory = LabelPlaceholderFactory()
 tokens = factory.create([person, location])
-# {person: '<PERSON>', location: '<LOCATION>'}
+# {person: '<<PERSON>>', location: '<<LOCATION>>'}
 ```
 
-!!! warning "Deanonymization with RedactPlaceholderFactory"
+!!! warning "Deanonymization with LabelPlaceholderFactory"
     Since multiple entities share the same token, deanonymization relies on original position order. This works correctly with the `Anonymizer.deanonymize()` method.
 
 ---

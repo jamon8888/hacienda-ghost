@@ -1,12 +1,15 @@
 ---
 icon: lucide/scan-search
+tags:
+  - Detector
+  - Regex
 ---
 
 # Pre-built detectors usage
 
-How to compose, combine, and extend the pre-built regex pattern sets shipped in `examples/detectors/`.
+`piighost` ships ready-to-use regex pattern sets for the most common PII: emails, IPs, URLs, API keys, phone numbers, SSNs, IBANs... You can use them as-is, combine them together, or extend them with your own patterns.
 
-For the full catalog of available labels (Common, US, Europe), see [Reference Pre-built detectors](../reference/detectors.md).
+This page walks through the usage recipes. For the full catalog of available labels (Common, US, Europe), see [Reference Pre-built detectors](../reference/detectors.md).
 
 ---
 
@@ -19,7 +22,7 @@ from piighost.anonymizer import Anonymizer
 from piighost.linker.entity import ExactEntityLinker
 from piighost.resolver import MergeEntityConflictResolver, ConfidenceSpanConflictResolver
 from piighost.pipeline import AnonymizationPipeline
-from piighost.placeholder import CounterPlaceholderFactory
+from piighost.placeholder import LabelCounterPlaceholderFactory
 
 detector = create_detector()
 
@@ -27,7 +30,7 @@ entity_linker = ExactEntityLinker()
 entity_resolver = MergeEntityConflictResolver()
 span_resolver = ConfidenceSpanConflictResolver()
 
-ph_factory = CounterPlaceholderFactory()
+ph_factory = LabelCounterPlaceholderFactory()
 anonymizer = Anonymizer(ph_factory=ph_factory)
 
 pipeline = AnonymizationPipeline(
@@ -40,7 +43,7 @@ pipeline = AnonymizationPipeline(
 
 anonymized, _ = await pipeline.anonymize("Email me at alice@example.com, server 192.168.1.42.")
 print(anonymized)
-# Email me at <<EMAIL_1>>, server <<IP_V4_1>>.
+# Email me at <<EMAIL:1>>, server <<IP_V4_1>>.
 ```
 
 ---
@@ -55,7 +58,7 @@ detector = create_full_detector()
 span_resolver = ConfidenceSpanConflictResolver()
 entity_linker = ExactEntityLinker()
 entity_resolver = MergeEntityConflictResolver()
-anonymizer = Anonymizer(CounterPlaceholderFactory())
+anonymizer = Anonymizer(LabelCounterPlaceholderFactory())
 
 pipeline = AnonymizationPipeline(
     detector=detector,
@@ -69,7 +72,7 @@ anonymized, _ = await pipeline.anonymize(
     "SSN 123-45-6789, email john@example.com, card 4532-1234-5678-9012."
 )
 print(anonymized)
-# SSN <<US_SSN_1>>, email <<EMAIL_1>>, card <<CREDIT_CARD_1>>.
+# SSN <<US_SSN:1>>, email <<EMAIL:1>>, card <<CREDIT_CARD:1>>.
 ```
 
 ---
@@ -95,7 +98,7 @@ detector = RegexDetector(patterns=my_patterns)
 
 ---
 
-## Combine with GLiNER2 (NER + regex)
+## Combine with an NER (NER + regex)
 
 ```python
 from gliner2 import GLiNER2
@@ -113,7 +116,7 @@ detector = CompositeDetector(detectors=[ner_detector, regex_detector])
 span_resolver = ConfidenceSpanConflictResolver()
 entity_linker = ExactEntityLinker()
 entity_resolver = MergeEntityConflictResolver()
-anonymizer = Anonymizer(CounterPlaceholderFactory())
+anonymizer = Anonymizer(LabelCounterPlaceholderFactory())
 
 pipeline = AnonymizationPipeline(
     detector=detector,
@@ -125,7 +128,7 @@ pipeline = AnonymizationPipeline(
 
 anonymized, _ = await pipeline.anonymize("Patrick at alice@example.com, IP 10.0.0.1.")
 print(anonymized)
-# <<PERSON_1>> at <<EMAIL_1>>, IP <<IP_V4_1>>.
+# <<PERSON:1>> at <<EMAIL:1>>, IP <<IP_V4_1>>.
 ```
 
 ---

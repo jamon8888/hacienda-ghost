@@ -1,7 +1,7 @@
 """Tests for ``AnonymizationPipeline``."""
 
 import pytest
-from aiocache import Cache, BaseCache
+from aiocache import BaseCache, SimpleMemoryCache
 
 from piighost.anonymizer import Anonymizer
 from piighost.detector import ExactMatchDetector
@@ -9,8 +9,8 @@ from piighost.exceptions import CacheMissError
 from piighost.linker.entity import ExactEntityLinker
 from piighost.pipeline.base import AnonymizationPipeline
 from piighost.placeholder import (
-    CounterPlaceholderFactory,
-    RedactPlaceholderFactory,
+    LabelCounterPlaceholderFactory,
+    LabelPlaceholderFactory,
     AnyPlaceholderFactory,
 )
 from piighost.resolver.entity import MergeEntityConflictResolver
@@ -30,7 +30,7 @@ def _pipeline(
         span_resolver=ConfidenceSpanConflictResolver(),
         entity_linker=ExactEntityLinker(),
         entity_resolver=MergeEntityConflictResolver(),
-        anonymizer=Anonymizer(factory or CounterPlaceholderFactory()),
+        anonymizer=Anonymizer(factory or LabelCounterPlaceholderFactory()),
         cache=cache,
     )
 
@@ -46,20 +46,20 @@ class TestAnonymize:
     async def test_single_entity(self) -> None:
         pipeline = _pipeline([("Patrick", "PERSON")])
         result, _ = await pipeline.anonymize("Bonjour Patrick")
-        assert result == "Bonjour <<PERSON_1>>"
+        assert result == "Bonjour <<PERSON:1>>"
 
     async def test_multiple_entities(self) -> None:
         pipeline = _pipeline([("Patrick", "PERSON"), ("Paris", "LOCATION")])
         result, _ = await pipeline.anonymize("Patrick habite à Paris")
-        assert "<<PERSON_1>>" in result
-        assert "<<LOCATION_1>>" in result
+        assert "<<PERSON:1>>" in result
+        assert "<<LOCATION:1>>" in result
         assert "Patrick" not in result
         assert "Paris" not in result
 
     async def test_expands_to_all_occurrences(self) -> None:
         pipeline = _pipeline([("Patrick", "PERSON")])
         result, _ = await pipeline.anonymize("Patrick est gentil. Patrick habite ici.")
-        assert result.count("<<PERSON_1>>") == 2
+        assert result.count("<<PERSON:1>>") == 2
 
     async def test_no_match_returns_unchanged(self) -> None:
         pipeline = _pipeline([("Patrick", "PERSON")])
@@ -69,10 +69,10 @@ class TestAnonymize:
     async def test_with_redact_factory(self) -> None:
         pipeline = _pipeline(
             [("Patrick", "PERSON"), ("Henri", "PERSON")],
-            factory=RedactPlaceholderFactory(),
+            factory=LabelPlaceholderFactory(),
         )
         result, _ = await pipeline.anonymize("Patrick et Henri")
-        assert result == "<PERSON> et <PERSON>"
+        assert result == "<<PERSON>> et <<PERSON>>"
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ class TestDeanonymize:
     """deanonymize() restores text using stored mappings in cache."""
 
     async def test_deanonymize_from_anonymized_text(self) -> None:
-        pipeline = _pipeline([("Patrick", "PERSON")], cache=Cache(Cache.MEMORY))
+        pipeline = _pipeline([("Patrick", "PERSON")], cache=SimpleMemoryCache())
         text = "Bonjour Patrick"
         anonymized, _ = await pipeline.anonymize(text)
         restored, _ = await pipeline.deanonymize(anonymized)
@@ -92,7 +92,7 @@ class TestDeanonymize:
 
     async def test_deanonymize_multiple_entities(self) -> None:
         pipeline = _pipeline(
-            [("Patrick", "PERSON"), ("Paris", "LOCATION")], cache=Cache(Cache.MEMORY)
+            [("Patrick", "PERSON"), ("Paris", "LOCATION")], cache=SimpleMemoryCache()
         )
         text = "Patrick habite à Paris"
         anonymized, _ = await pipeline.anonymize(text)
@@ -100,13 +100,13 @@ class TestDeanonymize:
         assert restored == text
 
     async def test_deanonymize_unknown_text_raises(self) -> None:
-        pipeline = _pipeline([("Patrick", "PERSON")], cache=Cache(Cache.MEMORY))
+        pipeline = _pipeline([("Patrick", "PERSON")], cache=SimpleMemoryCache())
         with pytest.raises(CacheMissError):
             await pipeline.deanonymize("unknown text")
 
     async def test_deanonymize_with_spelling_variants(self) -> None:
         pipeline = _pipeline(
-            [("Patrick", "PERSON"), ("patric", "PERSON")], cache=Cache(Cache.MEMORY)
+            [("Patrick", "PERSON"), ("patric", "PERSON")], cache=SimpleMemoryCache()
         )
         text = "Patrick et patric sont amis"
         anonymized, _ = await pipeline.anonymize(text)
@@ -130,12 +130,12 @@ class TestCache:
     """Detector results are cached via aiocache."""
 
     async def test_cache_avoids_second_detection(self) -> None:
-        cache = Cache(Cache.MEMORY)
+        cache = SimpleMemoryCache()
         pipeline = _pipeline([("Patrick", "PERSON")], cache=cache)
 
         # First call detector runs.
         result1, _ = await pipeline.anonymize("Bonjour Patrick")
-        assert result1 == "Bonjour <<PERSON_1>>"
+        assert result1 == "Bonjour <<PERSON:1>>"
 
         # Spy on the detector to check it's not called again.
         original_detect = pipeline._detector.detect
@@ -150,18 +150,63 @@ class TestCache:
 
         # Second call same text, should use cache.
         result2, _ = await pipeline.anonymize("Bonjour Patrick")
-        assert result2 == "Bonjour <<PERSON_1>>"
+        assert result2 == "Bonjour <<PERSON:1>>"
         assert call_count == 0
 
     async def test_different_text_not_cached(self) -> None:
-        cache = Cache(Cache.MEMORY)
+        cache = SimpleMemoryCache()
         pipeline = _pipeline([("Patrick", "PERSON")], cache=cache)
 
         await pipeline.anonymize("Bonjour Patrick")
         result, _ = await pipeline.anonymize("Salut Patrick")
-        assert "<<PERSON_1>>" in result
+        assert "<<PERSON:1>>" in result
 
     async def test_no_cache_still_works(self) -> None:
         pipeline = _pipeline([("Patrick", "PERSON")], cache=None)
         result, _ = await pipeline.anonymize("Bonjour Patrick")
-        assert result == "Bonjour <<PERSON_1>>"
+        assert result == "Bonjour <<PERSON:1>>"
+
+
+class TestCacheTTL:
+    """``cache_ttl`` is propagated to every cache.set() call."""
+
+    async def test_ttl_passed_on_detect_and_anonymization(self) -> None:
+        cache = SimpleMemoryCache()
+        pipeline = AnonymizationPipeline(
+            detector=ExactMatchDetector([("Patrick", "PERSON")]),
+            anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
+            cache=cache,
+            cache_ttl=120,
+        )
+
+        observed: list[int | None] = []
+        original_set = cache.set
+
+        async def recording_set(key, value, *args, ttl=None, **kwargs):
+            observed.append(ttl)
+            return await original_set(key, value, *args, ttl=ttl, **kwargs)
+
+        cache.set = recording_set  # type: ignore[assignment]
+        await pipeline.anonymize("Bonjour Patrick")
+        assert observed
+        assert all(ttl == 120 for ttl in observed)
+
+    async def test_default_ttl_is_none(self) -> None:
+        cache = SimpleMemoryCache()
+        pipeline = AnonymizationPipeline(
+            detector=ExactMatchDetector([("Patrick", "PERSON")]),
+            anonymizer=Anonymizer(LabelCounterPlaceholderFactory()),
+            cache=cache,
+        )
+
+        observed: list[int | None] = []
+        original_set = cache.set
+
+        async def recording_set(key, value, *args, ttl=None, **kwargs):
+            observed.append(ttl)
+            return await original_set(key, value, *args, ttl=ttl, **kwargs)
+
+        cache.set = recording_set  # type: ignore[assignment]
+        await pipeline.anonymize("Bonjour Patrick")
+        assert observed
+        assert all(ttl is None for ttl in observed)

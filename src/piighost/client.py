@@ -21,12 +21,18 @@ if importlib.util.find_spec("httpx") is None:
         "please install piighost[client] for use client"
     )
 
-from typing import Any, Self
+import sys
+from typing import Any
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 import httpx
 
 from piighost.exceptions import CacheMissError
-from piighost.models import Detection, Entity, Span
+from piighost.models import Detection, Entity
 
 
 class PIIGhostClient:
@@ -107,16 +113,7 @@ class PIIGhostClient:
             json={
                 "text": text,
                 "thread_id": thread_id,
-                "detections": [
-                    {
-                        "text": d.text,
-                        "label": d.label,
-                        "start_pos": d.position.start_pos,
-                        "end_pos": d.position.end_pos,
-                        "confidence": d.confidence,
-                    }
-                    for d in detections
-                ],
+                "detections": [d.to_dict() for d in detections],
             },
         )
         response.raise_for_status()
@@ -167,6 +164,7 @@ class PIIGhostClient:
         )
         if response.status_code == 404:
             raise CacheMissError(response.json().get("error", "Cache miss"))
+
         response.raise_for_status()
         data = response.json()
         entities = _deserialize_entities(data.get("entities", []))
@@ -212,17 +210,4 @@ class PIIGhostClient:
 
 def _deserialize_entities(data: list[dict]) -> list[Entity]:
     """Convert JSON entity dicts back to piighost model objects."""
-    entities: list[Entity] = []
-    for ent_data in data:
-        detections = tuple(
-            Detection(
-                text=d["text"],
-                label=d["label"],
-                position=Span(d["start_pos"], d["end_pos"]),
-                confidence=d["confidence"],
-            )
-            for d in ent_data.get("detections", [])
-        )
-        if detections:
-            entities.append(Entity(detections=detections))
-    return entities
+    return [Entity.from_dict(ent) for ent in data if ent.get("detections")]

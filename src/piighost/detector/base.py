@@ -1,6 +1,6 @@
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Protocol
 
 from piighost.models import Detection, Span
@@ -146,6 +146,7 @@ class ExactMatchDetector:
 
     bag_of_words: list[tuple[str, str]]
     _flags: re.RegexFlag
+    _compiled: list[tuple[re.Pattern[str], str]]
 
     def __init__(
         self,
@@ -154,12 +155,22 @@ class ExactMatchDetector:
     ) -> None:
         self.bag_of_words = bag_of_words
         self._flags = flags
+        self._compiled = [
+            (self._build_pattern(word, flags), label) for word, label in bag_of_words
+        ]
+
+    @staticmethod
+    def _build_pattern(word: str, flags: re.RegexFlag) -> re.Pattern[str]:
+        escaped = re.escape(word)
+        prefix = r"\b" if word[0:1].isalnum() or word[0:1] == "_" else r"(?<!\w)"
+        suffix = r"\b" if word[-1:].isalnum() or word[-1:] == "_" else r"(?!\w)"
+        return re.compile(f"{prefix}{escaped}{suffix}", flags)
 
     async def detect(self, text: str) -> list[Detection]:
         """Detect entities by matching words from the dictionary in the text.
 
-        Iterates over each word in ``bag_of_words``, builds a word-boundary
-        regex pattern, and collects all non-overlapping matches.
+        Iterates over each pre-compiled pattern and collects all
+        non-overlapping matches.
 
         Args:
             text: The input text to search for entities.
@@ -170,14 +181,7 @@ class ExactMatchDetector:
         """
         detections: list[Detection] = []
 
-        for word, label in self.bag_of_words:
-            escaped = re.escape(word)
-
-            prefix = r"\b" if word[0:1].isalnum() or word[0:1] == "_" else r"(?<!\w)"
-            suffix = r"\b" if word[-1:].isalnum() or word[-1:] == "_" else r"(?!\w)"
-
-            pattern = re.compile(f"{prefix}{escaped}{suffix}", self._flags)
-
+        for pattern, label in self._compiled:
             for match in pattern.finditer(text):
                 detections.append(
                     Detection(
@@ -194,48 +198,68 @@ class ExactMatchDetector:
         return detections
 
 
-@dataclass
 class RegexDetector:
     """Detect entities using regular expressions, one pattern per label.
 
     Useful for structured PII with a known format (phone numbers, IBANs,
-    API keys, etc.) that a model-based detector may miss. Patterns are
-    compiled once at construction time.
+    API keys, etc.) that a model-based detector may miss.
 
     Args:
         patterns: Mapping from entity label to a regex pattern string.
+        validators: Optional mapping from label to a callable that returns
+            ``True`` when the matched text is a genuine instance of the
+            entity (e.g. Luhn checksum for credit cards, mod-97 for IBANs).
+            A label without an entry in this mapping is accepted on the
+            regex match alone. Matches rejected by a validator are
+            silently dropped.
 
     Example:
-        >>> detector = RegexDetector(patterns={"FR_PHONE": r"\\b(?:\\+33|0)[1-9](?:[\\s.\\-]?\\d{2}){4}\\b"})
-        >>> detections = await detector.detect("Appelez le 06 12 34 56 78")
+        >>> from piighost.detector.patterns import FR_PATTERNS
+        >>> from piighost.validators import validate_iban, validate_nir
+        >>> detector = RegexDetector(
+        ...     patterns=FR_PATTERNS,
+        ...     validators={"FR_IBAN": validate_iban, "FR_NIR": validate_nir},
+        ... )
     """
 
-    patterns: dict[str, str] = field(default_factory=dict)
-    _compiled: dict[str, re.Pattern] = field(
-        default_factory=dict, init=False, repr=False
-    )
-
-    def __post_init__(self) -> None:
-        self._compiled = {
-            label: re.compile(pattern) for label, pattern in self.patterns.items()
+    def __init__(
+        self,
+        patterns: dict[str, str] | None = None,
+        validators: dict[str, Callable[[str], bool]] | None = None,
+    ) -> None:
+        self.patterns: dict[str, str] = patterns if patterns is not None else {}
+        self.validators: dict[str, Callable[[str], bool]] = (
+            validators if validators is not None else {}
+        )
+        self._compiled: dict[str, re.Pattern[str]] = {
+            label: re.compile(p) for label, p in self.patterns.items()
         }
 
     async def detect(self, text: str) -> list[Detection]:
         """Find all regex matches for the configured patterns.
 
+        For labels that have a registered validator, each regex match is
+        passed to it and discarded if the validator returns ``False``.
+
         Args:
             text: The input text to search for entities.
 
         Returns:
-            One ``Detection`` per regex match, with ``confidence=1.0``.
+            One ``Detection`` per accepted match, with ``confidence=1.0``.
         """
         detections: list[Detection] = []
 
         for label, compiled in self._compiled.items():
+            validator = self.validators.get(label)
+
             for match in compiled.finditer(text):
+                matched_text = match.group()
+                if validator is not None and not validator(matched_text):
+                    continue
+
                 detections.append(
                     Detection(
-                        text=match.group(),
+                        text=matched_text,
                         label=label,
                         position=Span(
                             start_pos=match.start(),
@@ -248,7 +272,6 @@ class RegexDetector:
         return detections
 
 
-@dataclass
 class CompositeDetector:
     """Run multiple detectors and merge their results.
 
@@ -266,7 +289,8 @@ class CompositeDetector:
         ... ])
     """
 
-    detectors: list[AnyDetector] = field(default_factory=list)
+    def __init__(self, detectors: list[AnyDetector] | None = None) -> None:
+        self.detectors: list[AnyDetector] = detectors if detectors is not None else []
 
     async def detect(self, text: str) -> list[Detection]:
         """Collect detections from every child detector.
