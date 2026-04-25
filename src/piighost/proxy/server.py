@@ -47,8 +47,12 @@ def build_app(
         return JSONResponse({"intercepted": True, "proxy": "piighost"})
 
     async def messages(request: Request) -> StreamingResponse | JSONResponse:
-        if token and request.headers.get("x-piighost-token") != token:
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        # Paused mode: skip anonymization and forward as-is. The daemon stays
+        # running so strict-mode hosts redirects keep resolving, but PII
+        # rewriting is disabled. Toggled via `piighost on` / `piighost off`,
+        # which create/remove <vault>/paused.
+        if (vault_dir / "paused").exists():
+            return await passthrough(request)
         try:
             body = await request.json()
         except Exception:

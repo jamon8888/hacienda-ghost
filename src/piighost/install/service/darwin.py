@@ -42,6 +42,15 @@ def _plist_content(spec: ServiceSpec) -> str:
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <!-- ThrottleInterval prevents launchd from re-spawning more than once
+         every N seconds, which avoids hammering the system if the proxy
+         crashes immediately on startup. -->
+    <key>ThrottleInterval</key>
+    <integer>2</integer>
+    <!-- ExitTimeOut bounds how long launchd waits for graceful shutdown
+         before SIGKILL, keeping restart latency predictable. -->
+    <key>ExitTimeOut</key>
+    <integer>10</integer>
     <key>StandardOutPath</key>
     <string>{spec.vault_dir}/proxy/proxy.log</string>
     <key>StandardErrorPath</key>

@@ -39,6 +39,22 @@ def test_unit_content_has_bin_and_port(tmp_path: Path) -> None:
     assert "--port 443" in content
 
 
+def test_unit_content_restarts_always_with_rate_limit(tmp_path: Path) -> None:
+    """In strict mode the daemon must auto-restart on any exit code, but a
+    crash loop must not hammer the system. ``Restart=always`` plus a burst
+    limit (with non-zero ``RestartSec``) is the systemd-recommended pattern.
+    """
+    spec = _spec(tmp_path)
+    content = linux_mod._unit_content(spec)
+    assert "Restart=always" in content, (
+        "needed so the proxy comes back even after a clean exit "
+        "(SIGTERM/SIGKILL etc.)"
+    )
+    assert "RestartSec=" in content, "needed so we don't restart-loop instantly"
+    assert "StartLimitBurst=" in content, "rate-limit prevents fork bombs"
+    assert "StartLimitIntervalSec=" in content, "window for the burst limit"
+
+
 def test_install_writes_unit_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     spec = _spec(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))

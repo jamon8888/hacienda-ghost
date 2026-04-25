@@ -22,10 +22,20 @@ def _unit_dir() -> Path:
 
 
 def _unit_content(spec: ServiceSpec) -> str:
+    # Restart policy:
+    #   Restart=always              keep coming back even on clean exit (SIGTERM)
+    #   RestartSec=2                wait 2s between restart attempts
+    #   StartLimitBurst=10          allow up to 10 fast restarts...
+    #   StartLimitIntervalSec=60    ...within a 60-second window before backing off
+    # In strict mode this is what makes "kill the daemon" recoverable:
+    # systemd brings it back within seconds, well within Claude Code's
+    # request-retry window.
     return (
         "[Unit]\n"
         "Description=piighost anonymizing HTTPS proxy\n"
         "After=network.target\n"
+        "StartLimitBurst=10\n"
+        "StartLimitIntervalSec=60\n"
         "\n"
         "[Service]\n"
         "Type=simple\n"
@@ -34,7 +44,8 @@ def _unit_content(spec: ServiceSpec) -> str:
         f' --vault "{spec.vault_dir}"'
         f' --cert "{spec.cert_path}"'
         f' --key "{spec.key_path}"\n'
-        "Restart=on-failure\n"
+        "Restart=always\n"
+        "RestartSec=2\n"
         "AmbientCapabilities=CAP_NET_BIND_SERVICE\n"
         "\n"
         "[Install]\n"

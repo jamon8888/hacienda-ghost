@@ -37,10 +37,43 @@ def write_handshake(vault_dir: Path, hs: ProxyHandshake) -> None:
     os.replace(tmp, vault_dir / _FILE)
 
 
+def _pid_alive(pid: int) -> bool:
+    """Return True if a process with ``pid`` exists on this host.
+
+    Uses psutil, which is a hard dependency of the package. Any failure
+    (psutil missing, permission errors, etc.) errs on the side of
+    "alive" so we never wrongly delete a valid handshake.
+    """
+    if pid <= 0:
+        return False
+    try:
+        import psutil  # type: ignore[import-not-found]
+        return psutil.pid_exists(pid)
+    except Exception:
+        return True
+
+
 def read_handshake(vault_dir: Path) -> ProxyHandshake | None:
-    """Read the handshake file, or return ``None`` if missing."""
+    """Read the handshake file, or return ``None`` if missing or stale.
+
+    A handshake is *stale* when the recorded PID is no longer running —
+    typically because the proxy was killed with SIGKILL or the host
+    rebooted before the daemon could clean up. In that case the handshake
+    file is removed so callers (``piighost status``, ``piighost doctor``,
+    etc.) stop reporting phantom state.
+    """
     path = vault_dir / _FILE
     if not path.exists():
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return ProxyHandshake(**data)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        hs = ProxyHandshake(**data)
+    except Exception:
+        # Corrupt file — treat as absent and clean it up.
+        path.unlink(missing_ok=True)
+        return None
+
+    if not _pid_alive(hs.pid):
+        path.unlink(missing_ok=True)
+        return None
+    return hs

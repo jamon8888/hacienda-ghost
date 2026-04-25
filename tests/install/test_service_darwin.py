@@ -42,6 +42,19 @@ def test_plist_content_is_valid_xml(tmp_path: Path) -> None:
     ET.fromstring(content)  # must not raise
 
 
+def test_plist_keepalive_with_throttle(tmp_path: Path) -> None:
+    """KeepAlive=true brings the daemon back; ThrottleInterval prevents
+    a crash loop from hammering launchd faster than once per N seconds.
+    """
+    spec = _spec(tmp_path)
+    content = darwin_mod._plist_content(spec)
+    assert "<key>KeepAlive</key>" in content
+    assert "<key>ThrottleInterval</key>" in content
+    # ExitTimeOut limits how long launchd waits for graceful shutdown
+    # before sending SIGKILL — keeps restart latency bounded.
+    assert "<key>ExitTimeOut</key>" in content
+
+
 def test_install_calls_sudo(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
     with patch("piighost.install.service.darwin.subprocess.run") as mock_run:

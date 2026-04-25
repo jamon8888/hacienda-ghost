@@ -23,8 +23,10 @@ def _setup_doctor_passing(tmp_path: Path) -> None:
         json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://localhost:8443"}}),
         encoding="utf-8",
     )
+    import os
     from piighost.proxy.handshake import ProxyHandshake, write_handshake
-    write_handshake(tmp_path / ".piighost", ProxyHandshake(pid=1, port=8443, token="tok"))
+    # Use the test runner's own PID so read_handshake's liveness check passes.
+    write_handshake(tmp_path / ".piighost", ProxyHandshake(pid=os.getpid(), port=8443, token="tok"))
 
 
 def test_probe_dns_check_passes_when_resolves_to_loopback(

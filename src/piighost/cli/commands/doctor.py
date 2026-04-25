@@ -33,7 +33,12 @@ def run(
     if hs is None:
         failures.append("proxy: no handshake file (not running)")
     else:
-        typer.echo(f"  ok: pid={hs.pid} port={hs.port}")
+        # Surface mode (active vs paused) so users always know whether their
+        # outbound traffic is being anonymized. A "running but paused" daemon
+        # behaves like no proxy at all from a privacy standpoint.
+        paused = (vault / "paused").exists()
+        mode = "paused (transparent passthrough — PII NOT scrubbed)" if paused else "active (anonymizing)"
+        typer.echo(f"  ok: pid={hs.pid} port={hs.port} mode={mode}")
 
     typer.echo("Checking Claude Code settings.json…")
     settings = default_settings_path()
