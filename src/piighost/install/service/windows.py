@@ -42,6 +42,8 @@ def install(spec: ServiceSpec) -> None:
         ],
         check=True,
     )
+    # Start the task immediately so the proxy is live without a logoff/logon cycle.
+    subprocess.run(["schtasks", "/run", "/tn", _TASK_NAME], check=True)
 
 
 def uninstall(spec: ServiceSpec) -> None:

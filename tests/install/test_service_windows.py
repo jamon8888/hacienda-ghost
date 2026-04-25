@@ -39,6 +39,8 @@ def test_install_calls_netsh_and_schtasks(tmp_path: Path, monkeypatch: pytest.Mo
         argv_list = [" ".join(str(x) for x in c.args[0]) for c in mock_run.call_args_list]
         assert any("netsh" in a for a in argv_list)
         assert any("schtasks" in a and "/create" in a for a in argv_list)
+        # Proxy must be started immediately (not just registered for next logon)
+        assert any("schtasks" in a and "/run" in a for a in argv_list)
 
 
 def test_install_schtasks_uses_onlogon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
