@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -91,12 +92,30 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
         if not auth.startswith("Bearer ") or auth[7:] != token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         body = await request.json()
-        method = body.get("method")
+        method = body.get("method", "")
         params = body.get("params", {}) or {}
+        log_path = vault_dir / "daemon.log"
         svc: PIIGhostService = state["service"]
+        started = time.monotonic()
         try:
             result = await _dispatch(svc, method, params)
+            emit(
+                log_path, "rpc",
+                method=method,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                status="ok",
+            )
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
+            )
         except Exception as exc:  # noqa: BLE001
+            emit(
+                log_path, "rpc",
+                method=method,
+                duration_ms=int((time.monotonic() - started) * 1000),
+                status="error",
+                error=type(exc).__name__,
+            )
             return JSONResponse(
                 {
                     "jsonrpc": "2.0",
@@ -104,9 +123,6 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
                     "error": {"code": -32000, "message": type(exc).__name__},
                 }
             )
-        return JSONResponse(
-            {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
-        )
 
     async def shutdown(request: Request) -> JSONResponse:
         auth = request.headers.get("authorization", "")
