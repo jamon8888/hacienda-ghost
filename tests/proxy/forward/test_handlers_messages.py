@@ -117,6 +117,8 @@ async def test_invalid_json_body_returns_400(stub_service):
 
     assert flow.response is not None
     assert flow.response.status_code == 400
+    body = json.loads(flow.response.content)
+    assert body["error"].startswith("piighost:")
 
 
 @pytest.mark.asyncio

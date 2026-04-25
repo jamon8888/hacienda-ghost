@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from mitmproxy.http import Response
 
 from piighost.proxy.forward.handlers.base import Handler
+from piighost.proxy.forward.sse import SSEEvent, parse_sse_chunks, rebuild_sse_chunk
 
 if TYPE_CHECKING:
     from mitmproxy.http import HTTPFlow
@@ -59,18 +60,15 @@ class MessagesHandler(Handler):
         if "text/event-stream" not in ctype:
             return  # Phase 2: non-stream JSON rehydration
 
-        project = await self._service.active_project()
-        flow.response.content = await self._rehydrate_sse(
-            flow.response.content, project=project
-        )
+        try:
+            project = await self._service.active_project()
+            flow.response.content = await self._rehydrate_sse(
+                flow.response.content, project=project
+            )
+        except Exception:
+            return  # rehydration unavailable; placeholders remain but no PII is leaked
 
     async def _rehydrate_sse(self, raw: bytes, *, project: str) -> bytes:
-        from piighost.proxy.forward.sse import (
-            SSEEvent,
-            parse_sse_chunks,
-            rebuild_sse_chunk,
-        )
-
         out = bytearray()
         for event in parse_sse_chunks(raw):
             try:

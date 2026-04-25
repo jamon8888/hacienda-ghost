@@ -124,7 +124,7 @@ dev = [
     "commitizen>=4.13.9",
     "pytest-asyncio>=0.25",
     "pytest-benchmark>=5.1",
-    "kreuzberg>=4.9.4",
+    "kreuzberg>=4.9.4 ; sys_platform != 'win32'",
     "lancedb>=0.30.2",
     "rank-bm25>=0.2.2",
     "sentence-transformers>=3.0",
