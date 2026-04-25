@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from piighost.cli.commands import anonymize as anonymize_cmd
+from piighost.cli.commands import cleanup as cleanup_cmd
 from piighost.cli.commands import detect as detect_cmd
 from piighost.cli.commands import doctor as doctor_cmd
 from piighost.cli.commands import index as index_cmd
@@ -45,6 +46,7 @@ app.command("off", help="Pause anonymization (transparent passthrough).")(state_
 app.command("status", help="Show proxy daemon state and mode (active/paused).")(state_cmd.status)
 app.command("install")(install_run)
 app.command("uninstall")(uninstall_cmd.run)
+app.command("cleanup")(cleanup_cmd.run)
 app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")
 app.add_typer(projects_app, name="projects")
