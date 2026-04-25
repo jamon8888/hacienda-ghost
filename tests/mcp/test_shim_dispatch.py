@@ -6,6 +6,8 @@ import json
 import httpx
 import pytest
 
+pytest.importorskip('fastmcp')
+
 from piighost.mcp.shim import RpcError, dispatch
 from piighost.mcp.tools import ToolSpec
 

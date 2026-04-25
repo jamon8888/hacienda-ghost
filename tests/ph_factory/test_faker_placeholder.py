@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip('faker')
+
 """Tests for FakerPlaceholderFactory."""
 
 from piighost.models import Detection, Entity, Span

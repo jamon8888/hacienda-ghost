@@ -10,6 +10,11 @@ Tests a 3-turn conversation to verify:
 """
 
 import pytest
+
+pytest.importorskip("langchain")
+pytest.importorskip("langchain_core")
+pytest.importorskip("langgraph")
+
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage

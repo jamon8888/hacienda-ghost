@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytest.importorskip('fastmcp')
+
 from piighost.mcp.shim import _build_mcp
 
 

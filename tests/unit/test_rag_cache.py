@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+pytest.importorskip('langchain')
+
 pytest.importorskip("aiocache")
 
 from piighost.integrations.langchain.cache import RagCache
