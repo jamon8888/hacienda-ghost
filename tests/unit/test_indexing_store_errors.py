@@ -1,9 +1,6 @@
 """Tests for IndexingStore.list_errors and count_errors."""
 from __future__ import annotations
 
-import time
-from pathlib import Path
-
 import pytest
 
 from piighost.indexer.indexing_store import FileRecord, IndexingStore
@@ -47,6 +44,7 @@ def test_list_errors_returns_only_error_status(store):
     assert len(errs) == 1
     assert errs[0].file_path == "/b.pdf"
     assert errs[0].status == "error"
+    assert errs[0].error_message == "ExtractionError: corrupt"
 
 
 def test_list_errors_orders_by_indexed_at_desc(store):
