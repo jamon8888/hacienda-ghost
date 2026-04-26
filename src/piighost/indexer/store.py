@@ -87,10 +87,36 @@ class ChunkStore:
             raise ValueError("unsafe doc_id format")
         tbl.delete(f"doc_id = '{doc_id}'")
 
+    def _ensure_db_for_read(self) -> bool:
+        """Lazily open the LanceDB connection on read paths.
+
+        ``upsert_chunks`` initializes ``self._db`` when it writes the
+        first chunk in this process. But on a daemon restart (or any
+        process that READS before WRITING), ``self._db`` stays ``None``
+        and ``all_records`` / ``vector_search`` return empty even though
+        the chunks are persisted on disk. Open the connection here when
+        the lance directory already exists.
+
+        Returns True if a usable db is available after this call.
+        """
+        if self._db is not None:
+            return True
+        if not self._lance_path.exists():
+            return False
+        try:
+            import lancedb
+        except ImportError:
+            return False
+        try:
+            self._db = lancedb.connect(str(self._lance_path))
+        except Exception:
+            return False
+        return True
+
     def all_records(self) -> list[dict]:
         if self._meta_mode:
             return list(self._meta)
-        if self._db is None:
+        if not self._ensure_db_for_read():
             return []
         table_name = "chunks"
         if table_name not in self._db.list_tables().tables:
@@ -108,7 +134,7 @@ class ChunkStore:
     ) -> list[dict]:
         if self._meta_mode or not embedding:
             return []
-        if self._db is None:
+        if not self._ensure_db_for_read():
             return []
         table_name = "chunks"
         if table_name not in self._db.list_tables().tables:
