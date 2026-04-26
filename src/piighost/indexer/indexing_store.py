@@ -181,6 +181,40 @@ class IndexingStore:
             (project_id, file_path),
         )
 
+    def list_errors(
+        self,
+        project_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[FileRecord]:
+        """Return up to ``limit`` most-recent ``status='error'`` rows for
+        ``project_id``, ordered by ``indexed_at`` DESC.
+
+        The ``(project_id, status)`` index covers the predicate; the
+        ``ORDER BY indexed_at DESC LIMIT N`` clause is satisfied by a
+        small in-memory sort, which is fine at the limits we care about
+        (default 50, never more than a few hundred in practice)."""
+        cur = self._conn.execute(
+            "SELECT * FROM indexed_files "
+            "WHERE project_id = ? AND status = 'error' "
+            "ORDER BY indexed_at DESC "
+            "LIMIT ?",
+            (project_id, limit),
+        )
+        return [_row_to_record(row) for row in cur.fetchall()]
+
+    def count_errors(self, project_id: str) -> int:
+        """Return the total number of ``status='error'`` rows for
+        ``project_id``, ignoring any limit. Used as the truncation
+        indicator for :meth:`list_errors`."""
+        cur = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM indexed_files "
+            "WHERE project_id = ? AND status = 'error'",
+            (project_id,),
+        )
+        row = cur.fetchone()
+        return int(row["n"]) if row else 0
+
     @contextmanager
     def batch(self) -> Iterator[None]:
         """Context manager for atomic batch operations.
