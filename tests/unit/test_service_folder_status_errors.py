@@ -84,6 +84,16 @@ def test_folder_status_returns_categorised_errors(vault_dir, monkeypatch, tmp_pa
     for e in status["errors"]:
         assert "password-protected" not in e["category"]
         assert "ExtractionError" not in e["category"]
+
+    paths = [e["file_path"] for e in status["errors"]]
+    assert paths == [str(folder / "a.pdf"), str(folder / "b.pdf"), str(folder / "c.heic")]
+
+    assert [e["indexed_at"] for e in status["errors"]] == [300, 200, 100]
+
+    VALID_CATEGORIES = {"password_protected", "corrupt", "unsupported_format", "timeout", "other"}
+    for e in status["errors"]:
+        assert e["category"] in VALID_CATEGORIES
+
     asyncio.run(svc.close())
 
 
