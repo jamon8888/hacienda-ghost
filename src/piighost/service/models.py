@@ -110,3 +110,18 @@ class CancelResult(BaseModel):
     cancelled: bool
     files_processed: int = 0
     files_skipped: int = 0
+
+
+class FolderError(BaseModel):
+    """One file-level indexing failure surfaced by ``folder_status``.
+
+    The Python exception class name is intentionally not exposed —
+    server logs are the source of truth for individual exceptions.
+    Only the bounded ``category`` (one of ``password_protected``,
+    ``corrupt``, ``unsupported_format``, ``timeout``, ``other``)
+    crosses the service boundary."""
+
+    file_name: str        # basename only — safe for outbound rendering
+    file_path: str        # full path — already exposed by index_status
+    category: str         # one of the error_taxonomy values
+    indexed_at: int       # unix epoch seconds
