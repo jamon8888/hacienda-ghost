@@ -103,12 +103,13 @@ async def test_dispatch_uses_per_tool_timeout() -> None:
 
 
 @pytest.mark.asyncio
-async def test_each_tool_has_explicit_kwargs(monkeypatch) -> None:
+async def test_each_tool_has_explicit_kwargs(tmp_path, monkeypatch) -> None:
     """Regression: every registered tool must have explicit named parameters,
     not a single `params: dict`. This is what gives MCP clients a useful
     parameter schema instead of a black box."""
     from piighost.mcp.shim import _build_mcp
-    mcp = _build_mcp(base_url="http://x", token="t")
+    # Schema inspection only — tools never invoked, so daemon is never spawned.
+    mcp = _build_mcp(vault_dir=tmp_path)
     tools = await mcp.list_tools()
     assert len(tools) == 14, f"Expected 14 tools, got {len(tools)}"
     for tool in tools:
@@ -119,7 +120,7 @@ async def test_each_tool_has_explicit_kwargs(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_vault_show_uses_daemon_auth_token_not_param() -> None:
+async def test_vault_show_uses_daemon_auth_token_not_param(tmp_path) -> None:
     """Regression: vault_show accepts a `token` parameter (vault placeholder).
     That must NOT be sent as the Authorization bearer — the daemon's
     bearer token from the closure must be used."""
@@ -135,17 +136,18 @@ async def test_vault_show_uses_daemon_auth_token_not_param() -> None:
     import httpx as _httpx
     transport = _httpx.MockTransport(_h)
 
-    # Patch httpx.AsyncClient to use our transport
     import piighost.mcp.shim as shim
+    from piighost.daemon.handshake import DaemonHandshake
+    fake_hs = DaemonHandshake(pid=1, port=51207, token="DAEMON_BEARER", started_at=0)
     original = _httpx.AsyncClient
     def _make_client(*args, **kwargs):
         kwargs["transport"] = transport
         return original(*args, **kwargs)
     import unittest.mock
-    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client):
-        mcp = _build_mcp(base_url="http://x", token="DAEMON_BEARER")
+    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client), \
+         unittest.mock.patch.object(shim, "ensure_daemon", lambda vault_dir: fake_hs):
+        mcp = _build_mcp(vault_dir=tmp_path)
         vault_show_tool = await mcp.get_tool("vault_show")
-        # Invoke with a vault placeholder as the `token` param
         await vault_show_tool.fn(token="<PERSON:abc>", reveal=False, project="default")
 
     assert captured["auth"] == "Bearer DAEMON_BEARER", (
@@ -155,7 +157,7 @@ async def test_vault_show_uses_daemon_auth_token_not_param() -> None:
 
 
 @pytest.mark.asyncio
-async def test_query_sends_nested_filter_to_daemon() -> None:
+async def test_query_sends_nested_filter_to_daemon(tmp_path) -> None:
     """Regression: shim must wrap filter_prefix/filter_doc_ids in a nested
     `filter` object that matches the daemon's reader."""
     captured: dict = {}
@@ -166,6 +168,9 @@ async def test_query_sends_nested_filter_to_daemon() -> None:
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"hits": []}})
 
     from piighost.mcp.shim import _build_mcp
+    import piighost.mcp.shim as shim
+    from piighost.daemon.handshake import DaemonHandshake
+    fake_hs = DaemonHandshake(pid=1, port=51207, token="t", started_at=0)
     import httpx as _httpx
     transport = _httpx.MockTransport(_h)
     import unittest.mock
@@ -173,8 +178,9 @@ async def test_query_sends_nested_filter_to_daemon() -> None:
     def _make_client(*args, **kwargs):
         kwargs["transport"] = transport
         return original(*args, **kwargs)
-    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client):
-        mcp = _build_mcp(base_url="http://x", token="t")
+    with unittest.mock.patch.object(_httpx, "AsyncClient", _make_client), \
+         unittest.mock.patch.object(shim, "ensure_daemon", lambda vault_dir: fake_hs):
+        mcp = _build_mcp(vault_dir=tmp_path)
         query_tool = await mcp.get_tool("query")
         await query_tool.fn(
             text="hi",

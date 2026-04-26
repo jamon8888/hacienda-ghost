@@ -19,9 +19,10 @@ from piighost.mcp.shim import _build_mcp
 
 
 @pytest.mark.asyncio
-async def test_run_stdio_returns_within_1s_on_eof(monkeypatch) -> None:
+async def test_run_stdio_returns_within_1s_on_eof(monkeypatch, tmp_path) -> None:
     """Pipe an empty stream to the FastMCP stdio loop; it must return."""
-    mcp = _build_mcp(base_url="http://unused", token="unused")
+    # No tools invoked → daemon never spawned, vault_dir only used for closure binding.
+    mcp = _build_mcp(vault_dir=tmp_path)
 
     # Replace stdin/stdout with empty pipes so run_stdio sees immediate EOF.
     empty_in = io.BytesIO(b"")
