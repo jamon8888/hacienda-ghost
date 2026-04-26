@@ -1,26 +1,30 @@
+"""piighost install — typer entry point.
+
+The interactive flow lives in `interactive.py`. The flag parser
+lives in `flags.py`. Both produce an InstallPlan, which the
+`executor` then walks.
+
+`_run_light_mode` and `_run_strict_mode` are preserved as private
+helpers called from `modes.py` so the existing logic for CA / leaf
+cert / hosts file / service registration doesn't have to be moved.
+"""
 from __future__ import annotations
 
-import json
 import os
+import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 
 from piighost.install import ca as ca_mod
-from piighost.install import claude_config, docker, host_config, models, preflight, trust_store, uv_path
+from piighost.install import host_config, trust_store
+from piighost.install.executor import execute
+from piighost.install.flags import parse_flags
+from piighost.install.interactive import build_plan_interactively
 from piighost.install.ui import error, info, step, success, warn
 
-MCP_ENTRY_UV = {
-    "type": "stdio",
-    "command": "uvx",
-    "args": [
-        "--from", "piighost[mcp,index,gliner2]",
-        "piighost", "serve", "--transport", "stdio",
-    ],
-    "env": {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
-}
-
+# Used by Docker-flow callers; preserved for backward compatibility.
 MCP_ENTRY_DOCKER = {
     "type": "sse",
     "url": "http://localhost:8080/sse",
@@ -28,128 +32,113 @@ MCP_ENTRY_DOCKER = {
 
 
 def run(
-    full: Annotated[bool, typer.Option("--full", help="Download all models")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Print actions without executing")] = False,
-    no_docker: Annotated[bool, typer.Option("--no-docker", help="Force uv path")] = False,
-    reranker: Annotated[bool, typer.Option("--reranker", help="Also warm up reranker")] = False,
-    force: Annotated[bool, typer.Option("--force", help="Overwrite existing config; ignore disk warning")] = False,
-    mode: Annotated[str, typer.Option("--mode", help="Install mode: 'light' (CA + proxy, no Docker) or 'strict' (Phase 2)")] = "light",
+    mode: Annotated[Optional[str], typer.Option(
+        "--mode", help="full | mcp-only | strict (advanced) | light (deprecated)"
+    )] = None,
+    vault_dir: Annotated[Optional[Path], typer.Option(
+        "--vault-dir", help="Where to store the PII vault and indexed docs."
+    )] = None,
+    embedder: Annotated[Optional[str], typer.Option(
+        "--embedder", help="local | mistral | none"
+    )] = None,
+    mistral_api_key: Annotated[Optional[str], typer.Option(
+        "--mistral-api-key", help="Required when --embedder=mistral."
+    )] = None,
+    clients: Annotated[Optional[str], typer.Option(
+        "--clients", help="Comma-separated: code, desktop. Default: auto-detect."
+    )] = None,
+    user_service: Annotated[Optional[bool], typer.Option(
+        "--user-service/--no-user-service",
+        help="Install user-level auto-restart service (default: yes for full/strict, no for mcp-only).",
+    )] = None,
+    warmup: Annotated[bool, typer.Option(
+        "--warmup", help="Download model weights now instead of lazy on first use."
+    )] = False,
+    force: Annotated[bool, typer.Option(
+        "--force", help="Overwrite conflicting MCP entries / config."
+    )] = False,
+    dry_run: Annotated[bool, typer.Option(
+        "--dry-run", help="Print what would happen, don't change anything."
+    )] = False,
+    yes: Annotated[bool, typer.Option(
+        "--yes", "-y", help="Skip the final confirmation prompt."
+    )] = False,
 ) -> None:
-    """Install piighost with all models and register it in Claude Desktop."""
-    # Phase 1: light mode — generate CA, write settings.json. Skip heavy install steps.
-    if mode == "strict":
-        _run_strict_mode()
-        return
-
+    """Install piighost with the chosen mode and integrations."""
+    # Backward-compat: --mode=light and --mode=strict bypass the new executor
+    # and delegate directly to the legacy helpers.  These modes are deprecated
+    # (light) or advanced (strict) and their helpers already contain the full
+    # orchestration logic including settings.json / trust-store / hosts file.
     if mode == "light":
+        print(
+            "[deprecated] --mode=light is now '--mode=full'. "
+            "This alias will be removed in 0.10.0."
+        )
         _run_light_mode()
         return
 
-    if dry_run:
-        info("Dry run — no changes will be made.")
+    if mode == "strict":
+        print(
+            "[advanced] strict mode requires admin and modifies your "
+            "hosts file. Most users want '--mode=full'. See "
+            "docs/install-paths.md."
+        )
+        _run_strict_mode()
+        return
 
-    # Step 1: Pre-flight
-    step("Pre-flight checks")
+    plan = _produce_plan(
+        mode, vault_dir, embedder, mistral_api_key,
+        clients, user_service, warmup, force, dry_run, yes,
+    )
+    execute(plan)
+
+
+def _produce_plan(
+    mode, vault_dir, embedder, mistral_api_key,
+    clients, user_service, warmup, force, dry_run, yes,
+):
+    explicit_flags = any(
+        v is not None for v in (mode, vault_dir, embedder, mistral_api_key, clients, user_service)
+    )
+    if _should_prompt(yes, dry_run, explicit_flags):
+        plan = build_plan_interactively(starting_defaults=None)
+        return plan
+
     try:
-        preflight.check_python_version()
-        try:
-            preflight.check_disk_space(min_gb=2.0)
-        except preflight.PreflightError as exc:
-            if not force:
-                error(str(exc))
-                raise typer.Exit(code=1)
-            warn(f"{exc} — continuing because --force was passed.")
-        preflight.check_internet()
-    except preflight.PreflightError as exc:
+        result = parse_flags(
+            mode=mode,
+            vault_dir=vault_dir,
+            embedder=embedder,
+            mistral_api_key=mistral_api_key,
+            clients=clients,
+            user_service=user_service,
+            warmup=warmup,
+            force=force,
+            dry_run=dry_run,
+            yes=yes,
+            env=dict(os.environ),
+        )
+    except ValueError as exc:
         error(str(exc))
         raise typer.Exit(code=1)
-    success("Pre-flight checks passed.")
 
-    # Step 2: Docker detection
-    use_docker = False
-    if not no_docker:
-        step("Detecting Docker")
-        use_docker = docker.docker_available()
-        if use_docker:
-            info("Docker daemon is running — using Docker path.")
-        else:
-            info("Docker not available — using uv path.")
+    for d in result.deprecations:
+        # Print the full message verbatim (rich would strip [deprecated]/[advanced]
+        # markup tags, so bypass warn() for deprecation notices).
+        print(d.message)
+    return result.plan
 
-    # Step 3: Install backend
-    if use_docker:
-        step("Pulling and starting Docker services")
-        try:
-            docker.compose_pull_and_up(dry_run=dry_run)
-        except docker.DockerError as exc:
-            error(str(exc))
-            raise typer.Exit(code=1)
-        success("Docker services running.")
-    else:
-        step("Installing piighost via uv")
-        try:
-            uv_bin = uv_path.ensure_uv()
-        except uv_path.UvNotFoundError as exc:
-            error(str(exc))
-            raise typer.Exit(code=1)
-        try:
-            uv_path.install_piighost(uv_path=uv_bin, dry_run=dry_run)
-        except RuntimeError as exc:
-            error(str(exc))
-            raise typer.Exit(code=1)
-        success("piighost installed.")
 
-    # Step 4: Model warm-up
-    if full:
-        cfg = _load_config()
-        step("Warming up NER model (GLiNER2 + French adapter)")
-        try:
-            models.warmup_ner(cfg, dry_run=dry_run)
-        except models.WarmupError as exc:
-            error(str(exc))
-            raise typer.Exit(code=1)
-        success("NER model ready.")
+def _should_prompt(yes: bool, dry_run: bool, explicit_flags: bool) -> bool:
+    if yes or dry_run or explicit_flags:
+        return False
+    return sys.stdin.isatty()
 
-        step("Warming up embedder model (Solon)")
-        try:
-            models.warmup_embedder(cfg, dry_run=dry_run)
-        except models.WarmupError as exc:
-            error(str(exc))
-            raise typer.Exit(code=1)
-        success("Embedder model ready.")
 
-        if reranker:
-            step("Warming up reranker model (BGE)")
-            try:
-                models.warmup_reranker(cfg, dry_run=dry_run)
-            except models.WarmupError as exc:
-                error(str(exc))
-                raise typer.Exit(code=1)
-            success("Reranker model ready.")
-
-    # Step 5: Claude Desktop config
-    step("Registering MCP server in Claude Desktop")
-    mcp_entry = MCP_ENTRY_DOCKER if use_docker else MCP_ENTRY_UV
-    config_path = claude_config.find_claude_config()
-    if config_path is None:
-        warn("Claude Desktop config not found. Add this to claude_desktop_config.json manually:")
-        info(json.dumps({"mcpServers": {"piighost": mcp_entry}}, indent=2))
-    else:
-        try:
-            claude_config.backup_config(config_path)
-            claude_config.merge_mcp_entry(config_path, "piighost", mcp_entry, force=force)
-            success(f"Registered in {config_path}")
-        except claude_config.AlreadyRegisteredError as exc:
-            warn(str(exc))
-        except claude_config.MalformedConfigError as exc:
-            warn(str(exc))
-
-    # Done
-    success("\npiighost is ready. Restart Claude Desktop to activate the MCP server.")
-
+# ---- legacy private helpers preserved for modes.py ----------------------
 
 def _run_light_mode() -> None:
     """Phase 1 light-mode orchestration: CA generation + OS trust store + Claude Code settings."""
-    # Step: Generate CA and leaf cert
     step("Generating local root CA and leaf certificate")
     vault = Path(os.path.expanduser("~")) / ".piighost"
     proxy_dir = vault / "proxy"
@@ -162,7 +151,6 @@ def _run_light_mode() -> None:
     (proxy_dir / "leaf.key").write_bytes(leaf.key_pem)
     success("CA and leaf cert written to ~/.piighost/proxy/")
 
-    # Step: Install CA into OS trust store
     step("Installing CA into OS trust store")
     if os.environ.get("PIIGHOST_SKIP_TRUSTSTORE") == "1":
         info("PIIGHOST_SKIP_TRUSTSTORE=1 — skipping trust store installation.")
@@ -173,7 +161,6 @@ def _run_light_mode() -> None:
         except Exception as exc:
             warn(f"Trust store install failed: {exc} — install manually.")
 
-    # Step: Configure Claude Code base URL
     step("Configuring Claude Code (ANTHROPIC_BASE_URL)")
     settings_path = Path(os.path.expanduser("~")) / ".claude" / "settings.json"
     host_config.set_claude_code_base_url(settings_path, "https://localhost:8443")
@@ -183,10 +170,9 @@ def _run_light_mode() -> None:
 
 
 def _run_strict_mode() -> None:
-    """Phase 2 strict-mode: CA for api.anthropic.com + hosts file + background service."""
+    """Phase 2 strict-mode: CA for api.anthropic.com + hosts file +
+    sudo background service on :443. Reachable only via --mode=strict."""
     import shutil
-    import sys
-
     vault = Path(os.path.expanduser("~")) / ".piighost"
     proxy_dir = vault / "proxy"
     proxy_dir.mkdir(parents=True, exist_ok=True)
@@ -202,13 +188,13 @@ def _run_strict_mode() -> None:
 
     step("Installing CA into OS trust store")
     if os.environ.get("PIIGHOST_SKIP_TRUSTSTORE") == "1":
-        info("PIIGHOST_SKIP_TRUSTSTORE=1 -- skipping trust store installation.")
+        info("PIIGHOST_SKIP_TRUSTSTORE=1 — skipping trust store installation.")
     else:
         try:
             trust_store.install_ca(proxy_dir / "ca.pem")
             success("CA installed in OS trust store.")
         except Exception as exc:
-            warn(f"Trust store install failed: {exc} -- install manually.")
+            warn(f"Trust store install failed: {exc} — install manually.")
 
     step("Editing hosts file (127.0.0.1 api.anthropic.com)")
     from piighost.install import hosts_file as hf
@@ -220,7 +206,7 @@ def _run_strict_mode() -> None:
 
     step("Installing background service (port 443)")
     if os.environ.get("PIIGHOST_SKIP_SERVICE") == "1":
-        info("PIIGHOST_SKIP_SERVICE=1 -- skipping service installation.")
+        info("PIIGHOST_SKIP_SERVICE=1 — skipping service installation.")
     else:
         from piighost.install import service as svc
         bin_path = shutil.which("piighost")
@@ -247,11 +233,3 @@ def _run_strict_mode() -> None:
                 warn(f"Service install failed: {exc}")
 
     success("\nStrict mode installed. Verify with: piighost doctor")
-
-
-def _load_config():  # type: ignore[return]
-    from piighost.service.config import ServiceConfig  # heavy import, only needed for full install
-    config_path = Path(".piighost") / "config.toml"
-    if config_path.exists():
-        return ServiceConfig.from_toml(config_path)
-    return ServiceConfig.default()
