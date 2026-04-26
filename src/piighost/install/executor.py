@@ -52,7 +52,7 @@ def execute(plan: InstallPlan) -> None:
         if os.environ.get("PIIGHOST_SKIP_WARMUP") == "1":
             info("PIIGHOST_SKIP_WARMUP=1 — skipping model warmup.")
         else:
-            step("Downloading model weights (GLiNER2 + Solon embedder, ~2GB)")
+            step("Downloading model weights (GLiNER2 + Solon embedder + BGE reranker, ~2.3GB)")
             models.warmup(_load_service_config(plan), dry_run=False)
 
     _print_next_steps(plan)

@@ -251,10 +251,15 @@ def _build_mcp(*, vault_dir) -> FastMCP:
 
     @mcp.tool(name="list_projects", description=by_name["list_projects"].description)
     async def list_projects() -> dict:
-        return await _lazy_dispatch(
+        # Daemon's RPC returns a list[ProjectInfo-shaped-dict]; FastMCP's
+        # structured-content validator requires a dict. Wrap it.
+        result = await _lazy_dispatch(
             by_name["list_projects"],
             params={},
         )
+        if isinstance(result, list):
+            return {"projects": result}
+        return result
 
     @mcp.tool(name="create_project", description=by_name["create_project"].description)
     async def create_project(name: str, description: str = "") -> dict:

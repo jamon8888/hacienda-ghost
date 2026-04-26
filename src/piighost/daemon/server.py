@@ -74,15 +74,31 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
 
     @asynccontextmanager
     async def _base_lifespan(_: Starlette) -> AsyncIterator[None]:
-        state["service"] = await PIIGhostService.create(
+        svc = await PIIGhostService.create(
             vault_dir=vault_dir, config=config
         )
+        # Eagerly create the "default" project so its detector + embedder
+        # + reranker load NOW — before we yield and start accepting RPCs.
+        # Without this, the first index_path/query call pays the
+        # ~30-90s model-load cost while the MCP client is timing out at
+        # ~30s. By blocking lifespan on the load, the handshake JSON
+        # is written only when we're truly ready, so any client that
+        # connects sees an instantly-responsive server.
+        try:
+            await svc._get_project("default", auto_create=True)
+        except Exception:
+            # Don't crash the daemon if eager warm fails — fall back
+            # to lazy load on first call. Still healthier than the
+            # original behavior (now at least the daemon stays up
+            # and reports the error per-tool-call).
+            pass
+        state["service"] = svc
         try:
             yield
         finally:
-            svc: PIIGhostService | None = state["service"]
-            if svc:
-                await svc.close()
+            current: PIIGhostService | None = state["service"]
+            if current:
+                await current.close()
 
     async def health(_: Request) -> JSONResponse:
         return JSONResponse({"ok": True})

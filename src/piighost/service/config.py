@@ -65,7 +65,9 @@ class EmbedderSection(BaseModel):
 
 
 class RerankerSection(BaseModel):
-    backend: Literal["none", "cross_encoder"] = "none"
+    # Default to cross_encoder so query results are quality-ranked out of
+    # the box. "none" skips reranking (faster but worse top-k ordering).
+    backend: Literal["none", "cross_encoder"] = "cross_encoder"
     cross_encoder_model: str = "BAAI/bge-reranker-base"
     top_n: int = 20
 

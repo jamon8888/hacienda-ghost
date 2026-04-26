@@ -64,6 +64,18 @@ def warmup_reranker(config: "ServiceConfig", *, dry_run: bool) -> None:
         raise WarmupError(f"Reranker warm-up failed: {exc}") from exc
 
 
+def warmup(config: "ServiceConfig", *, dry_run: bool) -> None:
+    """Pre-download every model the daemon will load on startup so the
+    first MCP tool call doesn't hit a multi-minute cold download.
+
+    Called from the install executor when ``plan.warmup_models`` is
+    true (default-on). Each of the three sub-warmups respects its own
+    backend gate, so e.g. ``embedder.backend = "none"`` is a no-op."""
+    warmup_ner(config, dry_run=dry_run)
+    warmup_embedder(config, dry_run=dry_run)
+    warmup_reranker(config, dry_run=dry_run)
+
+
 def _load_standard_ner(model_name: str) -> None:
     from gliner2 import GLiNER2
     GLiNER2.from_pretrained(model_name)
