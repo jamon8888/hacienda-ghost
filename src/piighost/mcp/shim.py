@@ -106,12 +106,30 @@ def _build_mcp(*, vault_dir) -> FastMCP:
 
     async def _lazy_dispatch(spec: ToolSpec, *, params: dict) -> dict:
         await _ensure()
-        return await dispatch(
-            spec,
-            params=params,
-            base_url=_conn["base_url"],  # populated by _ensure
-            token=_conn["token"],
-        )
+        try:
+            return await dispatch(
+                spec,
+                params=params,
+                base_url=_conn["base_url"],
+                token=_conn["token"],
+            )
+        except RpcError as exc:
+            # The cached connection points at a daemon that's gone or
+            # rotated (handshake refresh). Invalidate and retry once
+            # so callers don't have to restart the shim.
+            msg = str(exc)
+            if "transport error" not in msg and "HTTP " not in msg:
+                raise
+            async with _lock:
+                _conn["base_url"] = None
+                _conn["token"] = None
+            await _ensure()
+            return await dispatch(
+                spec,
+                params=params,
+                base_url=_conn["base_url"],
+                token=_conn["token"],
+            )
 
     # ------------------------------------------------------------------
     # Core PII operations
