@@ -12,23 +12,27 @@ from piighost.exceptions import VaultNotFound
 
 
 def _resolve_vault_for_serve(explicit: Path | None) -> Path:
-    """Resolve vault_dir for `serve`, with an env fallback for plugin hosts.
+    """Resolve vault_dir for `serve`, with env fallbacks for plugin hosts.
 
     Order:
       1. Explicit ``--vault`` argument.
-      2. ``HACIENDA_DATA_DIR`` env var (set by the hacienda Cowork plugin).
-         Created on demand — ``PIIGhostService.create`` handles migration
-         of a fresh directory, so no separate ``piighost init`` is required.
-      3. Walk upward from CWD for a ``.piighost/`` marker (standard CLI).
+      2. ``PIIGHOST_VAULT_DIR`` env var (set by ``piighost install`` and
+         the MCPB bundles when registering as an MCP server).
+      3. ``HACIENDA_DATA_DIR`` env var (set by the hacienda Cowork plugin).
+         Both #2 and #3 create the directory on demand —
+         ``PIIGhostService.create`` handles migration of a fresh
+         directory, so no separate ``piighost init`` is required.
+      4. Walk upward from CWD for a ``.piighost/`` marker (standard CLI).
     """
     if explicit is not None:
         return _resolve_vault(explicit)
 
-    env_dir = os.environ.get("HACIENDA_DATA_DIR")
-    if env_dir:
-        path = Path(env_dir).expanduser().resolve()
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+    for env_name in ("PIIGHOST_VAULT_DIR", "HACIENDA_DATA_DIR"):
+        env_dir = os.environ.get(env_name)
+        if env_dir:
+            path = Path(env_dir).expanduser().resolve()
+            path.mkdir(parents=True, exist_ok=True)
+            return path
 
     return _resolve_vault(None)
 
@@ -40,7 +44,12 @@ def run(
     try:
         vault_dir = _resolve_vault_for_serve(vault)
     except VaultNotFound as exc:
-        emit_error_line("VaultNotFound", str(exc), "Run `piighost init`", ExitCode.USER_ERROR)
+        emit_error_line(
+            error="VaultNotFound",
+            message=str(exc),
+            hint="Run `piighost init` here, set PIIGHOST_VAULT_DIR, or pass --vault.",
+            exit_code=ExitCode.USER_ERROR,
+        )
         raise typer.Exit(code=int(ExitCode.USER_ERROR))
 
     from piighost.mcp.server import run_mcp
