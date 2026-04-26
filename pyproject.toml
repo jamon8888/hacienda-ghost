@@ -44,6 +44,7 @@ dependencies = [
 
 [project.scripts]
 piighost = "piighost.cli.main:app"
+piighost-mcp = "piighost.mcp.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/Athroniaeth/piighost"

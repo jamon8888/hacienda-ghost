@@ -69,10 +69,7 @@ def _mcp_entry(plan: InstallPlan) -> dict:
         "args": [
             "--from",
             "piighost[mcp,index,gliner2,cache]",
-            "piighost",
-            "serve",
-            "--transport",
-            "stdio",
+            "piighost-mcp",
         ],
         "env": {
             "PYTHONUTF8": "1",

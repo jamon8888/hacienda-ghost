@@ -20,7 +20,7 @@
     "entry_point": "src/server.py",
     "mcp_config": {
       "command": "uv",
-      "args": ["run", "--directory", "${__dirname}", "src/server.py"],
+      "args": ["run", "--directory", "${__dirname}", "piighost-mcp"],
       "env": {
         "PYTHONUTF8": "1",
         "PYTHONIOENCODING": "utf-8",
