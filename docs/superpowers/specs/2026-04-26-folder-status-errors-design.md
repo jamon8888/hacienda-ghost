@@ -209,8 +209,7 @@ Render rules:
 ## PII / leak analysis
 
 - **Raw `error_message` (the persisted SQLite column): never returned.** Only
-  `category` (closed enumeration) and `error_class` (Python type name) cross
-  the service boundary.
+  `category` (closed enumeration) crosses the service boundary.
 - **`file_name` is the basename only.** No directory components.
 - **`file_path` is the full path.** This is acceptable: the user reading
   `/status` already owns this filesystem; there is no privacy boundary
