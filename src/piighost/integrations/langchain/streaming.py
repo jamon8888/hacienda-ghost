@@ -7,7 +7,11 @@ import re
 from piighost.service.core import PIIGhostService
 
 
-_OPEN_TOKEN_RE = re.compile(r"<[A-Z_]*:?[0-9a-f]*$")
+# Matches an in-progress placeholder token at the end of the buffer so we
+# can hold it back until the full token arrives. Tokens are wrapped in
+# ``<<LABEL:value>>`` (Hash/Counter factories) — we also tolerate a single
+# leading ``<`` because chunk boundaries may split the wrapper itself.
+_OPEN_TOKEN_RE = re.compile(r"<<?[A-Z_]*:?[0-9a-zA-Z]*>?$")
 
 
 class StreamingRehydrator:
