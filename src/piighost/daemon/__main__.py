@@ -28,6 +28,9 @@ def main() -> None:
     sock.close()
 
     app, token = build_app(vault_dir)
+    # Lifespan reads app.state.port for the daemon_started event; must be
+    # set before uvicorn.run(), which is when the lifespan begins.
+    app.state.port = port
     hs = DaemonHandshake(
         pid=os.getpid(), port=port, token=token, started_at=int(time.time())
     )

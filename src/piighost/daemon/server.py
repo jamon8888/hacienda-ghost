@@ -109,18 +109,19 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
                 {"jsonrpc": "2.0", "id": body.get("id"), "result": result}
             )
         except Exception as exc:  # noqa: BLE001
+            err_msg = f"{type(exc).__name__}: {exc}"
             emit(
                 log_path, "rpc",
                 method=method,
                 duration_ms=int((time.monotonic() - started) * 1000),
                 status="error",
-                error=type(exc).__name__,
+                error=err_msg,
             )
             return JSONResponse(
                 {
                     "jsonrpc": "2.0",
                     "id": body.get("id"),
-                    "error": {"code": -32000, "message": type(exc).__name__},
+                    "error": {"code": -32000, "message": err_msg},
                 }
             )
 
@@ -170,6 +171,7 @@ async def _dispatch(
         r = await svc.vault_list(
             label=params.get("label"),
             limit=params.get("limit", 100),
+            offset=params.get("offset", 0),
             reveal=params.get("reveal", False),
             project=params.get("project", "default"),
         )
