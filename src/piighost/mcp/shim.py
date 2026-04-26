@@ -133,10 +133,15 @@ def _build_mcp(*, vault_dir) -> FastMCP:
 
     @mcp.tool(name="detect", description=by_name["detect"].description)
     async def detect(text: str, project: str = "default") -> dict:
-        return await _lazy_dispatch(
+        # Daemon RPC returns list[Detection-shaped-dict]; FastMCP requires
+        # a dict for structured content. Wrap.
+        result = await _lazy_dispatch(
             by_name["detect"],
             params={"text": text, "project": project},
         )
+        if isinstance(result, list):
+            return {"detections": result}
+        return result
 
     # ------------------------------------------------------------------
     # Vault inspection
@@ -181,10 +186,15 @@ def _build_mcp(*, vault_dir) -> FastMCP:
     async def vault_search(
         query: str, reveal: bool = False, limit: int = 100, project: str = "default"
     ) -> dict:
-        return await _lazy_dispatch(
+        # Daemon RPC returns list[VaultEntry-shaped-dict]; FastMCP requires
+        # a dict for structured content. Wrap.
+        result = await _lazy_dispatch(
             by_name["vault_search"],
             params={"query": query, "reveal": reveal, "limit": limit, "project": project},
         )
+        if isinstance(result, list):
+            return {"entries": result}
+        return result
 
     # ------------------------------------------------------------------
     # RAG indexing & query

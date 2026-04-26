@@ -184,8 +184,13 @@ async def _dispatch(
             )
         ]
     if method == "vault_list":
+        # Empty-string label from MCP defaults must be treated as "no
+        # filter" — otherwise the SQL becomes WHERE label = "" and
+        # matches zero rows.
+        raw_label = params.get("label")
+        label = raw_label if raw_label else None
         r = await svc.vault_list(
-            label=params.get("label"),
+            label=label,
             limit=params.get("limit", 100),
             offset=params.get("offset", 0),
             reveal=params.get("reveal", False),
