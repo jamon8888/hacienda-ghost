@@ -9,6 +9,24 @@ from piighost.cli.main import app
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_install_env(monkeypatch, tmp_path):
+    """Keep install commands away from the real home dir and OS trust store.
+
+    expanduser uses HOME on POSIX and USERPROFILE on Windows; both are
+    redirected to tmp_path. PIIGHOST_SKIP_TRUSTSTORE/SERVICE prevent the
+    light/strict modes from invoking certutil/security/launchctl on the
+    host. trust_store.install_ca is also stubbed as a defense-in-depth
+    no-op for legacy paths that don't honour the env vars.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("PIIGHOST_SKIP_TRUSTSTORE", "1")
+    monkeypatch.setenv("PIIGHOST_SKIP_SERVICE", "1")
+    import piighost.install.trust_store as ts
+    monkeypatch.setattr(ts, "install_ca", lambda _p: None)
+
+
 def _all_mocked():
     return [
         patch("piighost.install.preflight.check_disk_space"),
@@ -40,9 +58,11 @@ def test_install_no_docker_forces_uv_path():
 
 
 def test_install_fails_gracefully_on_preflight_error():
+    # mode=light/strict short-circuit before preflight runs; pass a mode
+    # outside that set so the legacy preflight branch is exercised.
     from piighost.install.preflight import PreflightError
     with patch("piighost.install.preflight.check_disk_space", side_effect=PreflightError("no space")):
         with patch("piighost.install.preflight.check_python_version"):
-            result = runner.invoke(app, ["install", "--full"])
+            result = runner.invoke(app, ["install", "--full", "--mode=legacy"])
     assert result.exit_code != 0
     assert "no space" in result.output
