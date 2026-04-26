@@ -1,12 +1,15 @@
 """`piighost doctor` — health check across all subsystems."""
 from __future__ import annotations
 
+import json
 import os
+import socket
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from piighost.install.clients import claude_code_settings_path
 from piighost.install.host_config import default_settings_path
 from piighost.proxy.handshake import read_handshake
 
@@ -73,6 +76,12 @@ def run(
     if probe:
         _run_probe()
 
+    ok, msg = _check_proxy_reachability()
+    if msg:
+        typer.echo(msg)
+        if not ok:
+            raise typer.Exit(code=2)
+
     if failures:
         typer.echo("")
         typer.echo("FAILURES:")
@@ -80,6 +89,44 @@ def run(
             typer.echo(f"  x {f}")
         raise typer.Exit(code=1)
     typer.echo("\nAll checks passed.")
+
+
+def _proxy_reachable(host: str = "localhost", port: int = 8443, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _check_proxy_reachability() -> tuple[bool, str | None]:
+    """Returns (ok, message). ok=True if no problem detected.
+    The check only runs if the user has BASE_URL configured."""
+    settings_path = claude_code_settings_path()
+    if not settings_path.exists():
+        return True, None
+    try:
+        data = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return True, None
+    base_url = (data.get("env") or {}).get("ANTHROPIC_BASE_URL")
+    if not base_url:
+        return True, None
+    if "localhost:8443" not in base_url and "127.0.0.1:8443" not in base_url:
+        return True, None
+    if _proxy_reachable():
+        return True, None
+    return False, (
+        "[FAIL] proxy listening on https://localhost:8443\n"
+        "       ANTHROPIC_BASE_URL is set in ~/.claude/settings.json,\n"
+        "       but :8443 is unreachable. Anthropic API calls from\n"
+        "       Claude Code will fail until the proxy is restarted\n"
+        "       OR the BASE_URL is removed.\n\n"
+        "       Fix options:\n"
+        "         1. Start the proxy:    piighost serve &\n"
+        "         2. Disconnect:         piighost disconnect\n"
+        "         3. Reinstall service:  piighost install --user-service"
+    )
 
 
 def _run_probe() -> None:
