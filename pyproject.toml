@@ -35,11 +35,26 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    # core runtime
     "typing-extensions>=4.12",
     "pydantic>=2.0",
     "portalocker>=3.2.0",
     "psutil>=7.2.2",
     "httpx>=0.28",
+    # CLI + MCP server (every install ships with these — they're tiny)
+    "typer>=0.9",
+    "fastmcp>=3.2.4",
+    "mcp>=1.0",
+    # Detector (GLiNER2-based PII NER)
+    "gliner2>=1.2",
+    "requests>=2.28",
+    # Document extraction (kreuzberg ships Windows wheels since 4.9)
+    "kreuzberg>=4.9.4",
+    # RAG retrieval stack
+    "lancedb>=0.30.2",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=3.0",
+    "pyarrow>=14.0",
 ]
 
 [project.scripts]
@@ -53,10 +68,14 @@ Issues = "https://github.com/Athroniaeth/piighost/issues"
 Changelog = "https://github.com/Athroniaeth/piighost/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
-gliner2 = [
-    "gliner2>=1.2",
-    "requests>=2.28",
-]
+# All install groups below are now empty aliases preserved for back-compat
+# with `pip install piighost[mcp,index,gliner2]` invocations from older
+# scripts and docs. The packages they used to pull are now in the core
+# `dependencies` list — `pip install piighost` is self-sufficient.
+gliner2 = []
+mcp = []
+index = []
+# Genuinely-optional integrations remain opt-in:
 langchain = [
     "langchain>=1.2",
 ]
@@ -83,18 +102,6 @@ transformers = [
 ]
 llm = [
     "langchain-core>=0.3",
-]
-mcp = [
-    "fastmcp>=3.2.4",
-    "mcp>=1.0",
-    "typer>=0.9",
-]
-index = [
-    "kreuzberg>=4.9.4",
-    "lancedb>=0.30.2",
-    "rank-bm25>=0.2.2",
-    "sentence-transformers>=3.0",
-    "pyarrow>=14.0",
 ]
 proxy = [
     "cryptography>=42.0",

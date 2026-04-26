@@ -281,7 +281,17 @@ class _ProjectService:
                         skipped += 1
                         continue
                     chash_full = content_hash_full(p)
-                    doc_id = chash_full[:16]
+                    # doc_id mixes content_hash + absolute path so two
+                    # distinct paths with identical content (e.g.
+                    # client1/foo.txt and client2/foo.txt — same template
+                    # checked into multiple folders) get distinct vault
+                    # rows. Without the path component, the second write
+                    # silently overwrites the first via ON CONFLICT(doc_id)
+                    # in vault.indexed_files. Stable across runs because
+                    # the inputs are stable.
+                    doc_id = hashlib.sha256(
+                        f"{chash_full}:{str(p.resolve())}".encode("utf-8")
+                    ).hexdigest()[:16]
 
                     # If replacing existing doc, clean up old vectors first
                     existing = self._vault.get_indexed_file_by_path(str(p))

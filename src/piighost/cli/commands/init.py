@@ -18,7 +18,7 @@ audit_log = true
 
 [detector]
 backend = "gliner2"
-gliner2_model = "fastino/gliner2-multi-v1"
+gliner2_model = "jamon8888/french-pii-legal-ner-quantized"
 threshold = 0.5
 labels = ["PERSON", "LOC", "ORG", "EMAIL", "PHONE", "IBAN", "CREDIT_CARD", "ID"]
 

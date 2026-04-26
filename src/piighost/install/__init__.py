@@ -52,8 +52,9 @@ def run(
         help="Install user-level auto-restart service (default: yes for full/strict, no for mcp-only).",
     )] = None,
     warmup: Annotated[bool, typer.Option(
-        "--warmup", help="Download model weights now instead of lazy on first use."
-    )] = False,
+        "--warmup/--no-warmup",
+        help="Download model weights at install time (default: on). Set --no-warmup to defer downloads to first MCP tool call.",
+    )] = True,
     force: Annotated[bool, typer.Option(
         "--force", help="Overwrite conflicting MCP entries / config."
     )] = False,

@@ -39,7 +39,7 @@ def build_plan_interactively(starting_defaults: InstallPlan | None) -> InstallPl
         mistral_api_key=mistral_key,
         clients=clients,
         install_user_service=install_user_service,
-        warmup_models=False,
+        warmup_models=True,  # default-on so the first MCP tool call doesn't pay the 45s download cost
         force=False,
         dry_run=False,
     )

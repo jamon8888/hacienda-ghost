@@ -20,6 +20,7 @@ def isolated_install_env(monkeypatch, tmp_path):
     monkeypatch.setenv("PIIGHOST_SKIP_TRUSTSTORE", "1")
     monkeypatch.setenv("PIIGHOST_SKIP_SERVICE", "1")
     monkeypatch.setenv("PIIGHOST_SKIP_USERSVC", "1")
+    monkeypatch.setenv("PIIGHOST_SKIP_WARMUP", "1")
     import piighost.install.trust_store as ts
     monkeypatch.setattr(ts, "install_ca", lambda _p: None)
     return tmp_path
