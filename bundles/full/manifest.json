@@ -22,6 +22,9 @@
       "command": "uv",
       "args": ["run", "--directory", "${__dirname}", "src/server.py"],
       "env": {
+        "PYTHONUTF8": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
         "PIIGHOST_VAULT_DIR": "${user_config.vault_dir}",
         "MISTRAL_API_KEY": "${user_config.mistral_api_key}"
       }

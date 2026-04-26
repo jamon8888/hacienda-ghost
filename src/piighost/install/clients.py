@@ -77,6 +77,12 @@ def _mcp_entry(plan: InstallPlan) -> dict:
         "env": {
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
+            # Without this, Python block-buffers stdout on non-TTY
+            # attachment, the JSON-RPC initialize response stays in the
+            # buffer, and the MCP client times out and kills the server.
+            # Empirically required on Windows (Claude Desktop) and
+            # harmless elsewhere.
+            "PYTHONUNBUFFERED": "1",
             "PIIGHOST_VAULT_DIR": str(plan.vault_dir),
         },
     }
