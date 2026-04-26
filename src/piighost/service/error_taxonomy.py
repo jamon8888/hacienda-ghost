@@ -15,8 +15,18 @@ Category vocabulary (additive-only, never rename):
 """
 from __future__ import annotations
 
+from typing import Literal
+
+ErrorCategory = Literal[
+    "password_protected",
+    "corrupt",
+    "unsupported_format",
+    "timeout",
+    "other",
+]
+
 # Order matters: first match wins. Keep most specific patterns first.
-_TAXONOMY: tuple[tuple[str, str], ...] = (
+_TAXONOMY: tuple[tuple[str, ErrorCategory], ...] = (
     ("password",          "password_protected"),
     ("encrypted",         "password_protected"),
     ("could not decrypt", "password_protected"),
@@ -31,7 +41,7 @@ _TAXONOMY: tuple[tuple[str, str], ...] = (
 )
 
 
-def classify(error_message: str | None) -> str:
+def classify(error_message: str | None) -> ErrorCategory:
     """Return the bounded category for ``error_message``.
 
     Matches case-insensitively against substrings in ``_TAXONOMY`` in

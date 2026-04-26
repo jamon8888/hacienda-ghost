@@ -67,3 +67,12 @@ def test_classify_never_returns_input():
     assert "Martin Dupont" not in out
     assert "/clients" not in out
     assert out == "other"  # path-only message has no taxonomy keyword
+
+
+def test_classify_never_returns_input_on_positive_match():
+    """Invariant holds even when a keyword in the message triggers a match."""
+    secret = "ExtractionError: password required for /clients/Martin Dupont/secret.pdf"
+    out = classify(secret)
+    assert "Martin Dupont" not in out
+    assert "/clients" not in out
+    assert out == "password_protected"
