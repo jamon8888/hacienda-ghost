@@ -15,6 +15,11 @@ class WarmupError(RuntimeError):
 
 
 def warmup_ner(config: "ServiceConfig", *, dry_run: bool) -> None:
+    """Pre-download the base GLiNER2 model and (if configured) its
+    LoRA adapter. After this returns, the daemon's first detection
+    call finds everything cached on disk and skips the multi-minute
+    download — the ~22s MCP initialize timeout never fires.
+    """
     if dry_run:
         return
     model_name = config.detector.gliner2_model
@@ -23,8 +28,22 @@ def warmup_ner(config: "ServiceConfig", *, dry_run: bool) -> None:
             _load_french_ner()
         else:
             _load_standard_ner(model_name)
+
+        adapter = getattr(config.detector, "gliner2_adapter", None)
+        if adapter:
+            _snapshot_adapter(adapter)
     except (ImportError, RuntimeError, OSError) as exc:
         raise WarmupError(f"NER warm-up failed: {exc}") from exc
+
+
+def _snapshot_adapter(repo_or_path: str) -> None:
+    """Download an HF adapter snapshot if ``repo_or_path`` is a repo id.
+    Local paths are no-ops (already on disk)."""
+    from pathlib import Path
+    if Path(repo_or_path).exists():
+        return
+    from huggingface_hub import snapshot_download
+    snapshot_download(repo_or_path)
 
 
 def warmup_embedder(config: "ServiceConfig", *, dry_run: bool) -> None:

@@ -31,13 +31,20 @@ class VaultSection(BaseModel):
 
 class DetectorSection(BaseModel):
     backend: Literal["gliner2", "regex_only"] = "gliner2"
-    # Default GLiNER2 checkpoint (loadable via GLiNER2.from_pretrained).
-    # NOTE: jamon8888/french-pii-legal-ner-quantized is a GLiNER v1
-    # adapter (base + safetensors) and needs a different loader; tracked
-    # as a follow-up. Switch to fastino/gliner2-large-v1 for better
-    # accuracy than -multi-v1 if your hardware can spare the RAM.
-    gliner2_model: str = "fastino/gliner2-multi-v1"
+    # Base GLiNER2 checkpoint. When ``gliner2_adapter`` is set, this is
+    # the *base model* the adapter was trained against — the adapter's
+    # encoder dimensions must match. fastino/gliner2-base-v1 uses
+    # microsoft/deberta-v3-base (768-dim) which matches the
+    # jamon8888/french-pii-legal-ner adapters.
+    gliner2_model: str = "fastino/gliner2-base-v1"
+    # Optional LoRA adapter loaded on top of the base model via
+    # ``GLiNER2.load_adapter()``. HuggingFace repo id or local path.
+    # When set, the adapter's labels.json (if present) overrides the
+    # ``labels`` field below at runtime.
+    gliner2_adapter: str | None = "jamon8888/french-pii-legal-ner-base"
     threshold: float = 0.5
+    # Default labels — used when no adapter is loaded, or when the
+    # adapter has no labels.json.
     labels: list[str] = Field(
         default_factory=lambda: [
             "PERSON", "LOC", "ORG", "EMAIL",

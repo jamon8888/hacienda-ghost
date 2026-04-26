@@ -796,9 +796,28 @@ async def _build_default_detector(config: ServiceConfig) -> _Detector:
         from piighost.detector.gliner2 import Gliner2Detector
 
         model = GLiNER2.from_pretrained(config.detector.gliner2_model)
+
+        # Optional LoRA adapter on top of the base. When set, the
+        # adapter's labels.json overrides the configured labels list.
+        labels = list(config.detector.labels)
+        if config.detector.gliner2_adapter:
+            from pathlib import Path
+            import json
+            adapter_src = config.detector.gliner2_adapter
+            if Path(adapter_src).exists():
+                adapter_dir = adapter_src
+            else:
+                # HuggingFace repo id — download a local snapshot.
+                from huggingface_hub import snapshot_download
+                adapter_dir = snapshot_download(adapter_src)
+            model.load_adapter(str(adapter_dir))
+            labels_json = Path(adapter_dir) / "labels.json"
+            if labels_json.exists():
+                labels = json.loads(labels_json.read_text(encoding="utf-8"))
+
         ner = Gliner2Detector(
             model=model,
-            labels=config.detector.labels,
+            labels=labels,
             threshold=config.detector.threshold,
         )
         if config.detector.regex_fallback:
