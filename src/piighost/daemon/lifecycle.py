@@ -49,7 +49,7 @@ def _is_alive_with_retry(hs: DaemonHandshake, *, retries: int = 3, delay: float 
     return False
 
 
-def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 15.0) -> DaemonHandshake:
+def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 180.0) -> DaemonHandshake:
     """Return a running daemon handshake, spawning if necessary.
 
     Raises ``DaemonDisabled`` if ``<vault>/daemon.disabled`` exists; the
