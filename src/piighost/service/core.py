@@ -804,13 +804,18 @@ class PIIGhostService:
         resource to power the plugin's polling. Returns:
 
             {"folder", "project", "state", "total_docs", "total_chunks",
-             "last_indexed_at"}
+             "last_indexed_at", "errors", "errors_truncated",
+             "total_errors"}
 
         ``state`` is ``"empty"`` when no docs are indexed,
-        ``"indexed"`` otherwise. Future work: track in-flight
-        ``index_path`` calls and report ``"indexing"`` with progress.
+        ``"indexed"`` otherwise. ``errors`` is up to 50 most-recent
+        per-file failures (status='error' rows from the indexing
+        store), each sanitised to a bounded category. Future work:
+        track in-flight ``index_path`` calls and report ``"indexing"``
+        with progress.
         """
         from piighost.service.project_path import derive_project_from_path
+        from piighost.service.error_taxonomy import classify
         path = Path(folder).expanduser().resolve()
         project_name = derive_project_from_path(path)
         info = self._registry.get(project_name)
@@ -822,10 +827,24 @@ class PIIGhostService:
                 "total_docs": 0,
                 "total_chunks": 0,
                 "last_indexed_at": None,
+                "errors": [],
+                "errors_truncated": False,
+                "total_errors": 0,
             }
         svc = await self._get_project(project_name, auto_create=False)
         status = await svc.index_status(limit=1)
         last = status.files[0].indexed_at if status.files else None
+        error_rows = svc._indexing_store.list_errors(project_name, limit=50)
+        total_errors = svc._indexing_store.count_errors(project_name)
+        errors = [
+            {
+                "file_name": Path(r.file_path).name,
+                "file_path": r.file_path,
+                "category": classify(r.error_message),
+                "indexed_at": int(r.indexed_at),
+            }
+            for r in error_rows
+        ]
         return {
             "folder": str(path),
             "project": project_name,
@@ -833,6 +852,9 @@ class PIIGhostService:
             "total_docs": status.total_docs,
             "total_chunks": status.total_chunks,
             "last_indexed_at": last,
+            "errors": errors,
+            "errors_truncated": total_errors > len(errors),
+            "total_errors": total_errors,
         }
 
     # ---- audit log RPCs (used by /audit slash command) ----
