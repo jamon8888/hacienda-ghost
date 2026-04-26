@@ -129,15 +129,33 @@ def _location_for(client: Client) -> ClientLocation:
     raise KeyError(client)
 
 
-def _read_config(path: Path) -> dict:
+def read_config(path: Path) -> dict:
+    """Public: load a Claude client config (or return {} if missing)."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _write_config(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+def write_config(path: Path, data: dict) -> None:
+    """Public: write a Claude client config. Raises RuntimeError with a
+    remediation hint if the path is read-only or the directory cannot
+    be created (e.g. enterprise-managed installs)."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"cannot write {path}: {exc}. The file or its parent "
+            f"directory is read-only. If your Claude install is "
+            f"enterprise-managed, edit the config manually with the "
+            f"piighost MCP entry shown by `piighost install --dry-run`."
+        ) from exc
+
+
+# Internal aliases preserved for callers that imported the underscored
+# names before they were promoted to public.
+_read_config = read_config
+_write_config = write_config
 
 
 def _backup_path(path: Path) -> Path:

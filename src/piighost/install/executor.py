@@ -58,8 +58,9 @@ def execute(plan: InstallPlan) -> None:
 def _ensure_dirs(plan: InstallPlan) -> None:
     plan.vault_dir.mkdir(parents=True, exist_ok=True)
     home = Path("~").expanduser()
-    (home / ".piighost" / "proxy").mkdir(parents=True, exist_ok=True)
     (home / ".piighost" / "logs").mkdir(parents=True, exist_ok=True)
+    if plan.mode is not Mode.MCP_ONLY:
+        (home / ".piighost" / "proxy").mkdir(parents=True, exist_ok=True)
 
 
 def _spec_for(plan: InstallPlan) -> UserServiceSpec:

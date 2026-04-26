@@ -18,9 +18,11 @@ def run(
         ),
     ] = None,
 ) -> None:
-    """Remove ANTHROPIC_BASE_URL from your Claude client config(s).
-    The MCP server registration is preserved — disconnecting only stops
-    proxy interception, leaves your tools available."""
+    """Remove ANTHROPIC_BASE_URL from Claude Code's settings.json so
+    Anthropic API calls go direct again. (Claude Desktop is unaffected;
+    it never uses the env var.) The MCP server registration is preserved
+    — disconnecting only stops proxy interception, leaves your tools
+    available."""
     targets = _parse(client)
     disconnect(targets)
     typer.echo("Disconnected. Anthropic API calls go directly to api.anthropic.com.")

@@ -6,14 +6,11 @@ the proxy daemon is running, stopped, or completely uninstalled.
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from piighost.install.clients import (
-    _read_config,
-    _write_config,
     detect_all,
     claude_code_settings_path,
+    read_config,
+    write_config,
 )
 from piighost.install.plan import Client
 
@@ -32,9 +29,9 @@ def connect(clients: frozenset[Client] | None = None) -> None:
         path = claude_code_settings_path()
         if not path.exists():
             continue
-        config = _read_config(path)
+        config = read_config(path)
         config.setdefault("env", {})["ANTHROPIC_BASE_URL"] = _PROXY_BASE_URL
-        _write_config(path, config)
+        write_config(path, config)
 
 
 def disconnect(clients: frozenset[Client] | None = None) -> None:
@@ -47,14 +44,14 @@ def disconnect(clients: frozenset[Client] | None = None) -> None:
         path = claude_code_settings_path()
         if not path.exists():
             continue
-        config = _read_config(path)
+        config = read_config(path)
         env = config.get("env") or {}
         env.pop("ANTHROPIC_BASE_URL", None)
         if env:
             config["env"] = env
         else:
             config.pop("env", None)
-        _write_config(path, config)
+        write_config(path, config)
 
 
 def _resolve(clients: frozenset[Client] | None) -> frozenset[Client]:
