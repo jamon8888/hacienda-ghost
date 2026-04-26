@@ -2,19 +2,22 @@
 # Usage: irm https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.ps1 | iex
 #
 # Options (set before running):
-#   $env:PIIGHOST_MODE   = "strict" (default) | "local"
+#   $env:PIIGHOST_MODE   = "full" (default) | "mcp-only" | "strict" (advanced) | "light" (deprecated)
 #   $env:PIIGHOST_EXTRAS = "proxy,gliner2,mcp,index,cache" (default)
 #   $env:PIIGHOST_SOURCE = PyPI package name or git URL (default: GitHub)
 
 $ErrorActionPreference = 'Stop'
 
-$MODE    = if ($env:PIIGHOST_MODE)   { $env:PIIGHOST_MODE }   else { "strict" }
+$MODE    = if ($env:PIIGHOST_MODE)   { $env:PIIGHOST_MODE }   else { "full" }
 $EXTRAS  = if ($env:PIIGHOST_EXTRAS) { $env:PIIGHOST_EXTRAS } else { "proxy,gliner2,mcp,index,cache" }
 $SOURCE  = if ($env:PIIGHOST_SOURCE) { $env:PIIGHOST_SOURCE } else { "git+https://github.com/jamon8888/hacienda-ghost.git" }
 
 Write-Host ""
 Write-Host "piighost installer" -ForegroundColor Cyan
 Write-Host "  mode   : $MODE"
+Write-Host "    full       Anonymizing proxy + MCP tools + RAG (default)"
+Write-Host "    mcp-only   MCP tools + RAG only, no proxy"
+Write-Host "    strict     System-wide proxy (advanced, requires admin)"
 Write-Host "  extras : $EXTRAS"
 Write-Host "  source : $SOURCE"
 Write-Host ""

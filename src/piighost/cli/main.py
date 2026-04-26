@@ -14,6 +14,8 @@ from piighost.cli.commands import init as init_cmd
 from piighost.cli.commands import query as query_cmd
 from piighost.cli.commands import rehydrate as rehydrate_cmd
 from piighost.cli.commands import rm as rm_cmd
+from piighost.cli.commands import connect as connect_cmd
+from piighost.cli.commands import disconnect as disconnect_cmd
 from piighost.cli.commands import serve as serve_cmd
 from piighost.cli.commands import state as state_cmd
 from piighost.cli.commands.daemon import daemon_app
@@ -46,6 +48,8 @@ app.command("off", help="Pause anonymization (transparent passthrough).")(state_
 app.command("status", help="Show proxy daemon state and mode (active/paused).")(state_cmd.status)
 app.command("install")(install_run)
 app.command("uninstall")(uninstall_cmd.run)
+app.command("connect", help="Add ANTHROPIC_BASE_URL to your Claude client(s).")(connect_cmd.run)
+app.command("disconnect", help="Remove ANTHROPIC_BASE_URL from your Claude client(s).")(disconnect_cmd.run)
 app.command("cleanup")(cleanup_cmd.run)
 app.add_typer(vault_app, name="vault")
 app.add_typer(daemon_app, name="daemon")

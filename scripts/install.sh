@@ -3,19 +3,22 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/jamon8888/hacienda-ghost/master/scripts/install.sh | bash
 #
 # Options (set before running):
-#   PIIGHOST_MODE   = strict (default) | local
+#   PIIGHOST_MODE   = full (default) | mcp-only | strict (advanced) | light (deprecated)
 #   PIIGHOST_EXTRAS = proxy,gliner2,mcp,index,cache (default)
 #   PIIGHOST_SOURCE = PyPI package name or git URL (default: GitHub)
 
 set -euo pipefail
 
-MODE="${PIIGHOST_MODE:-strict}"
+MODE="${PIIGHOST_MODE:-full}"
 EXTRAS="${PIIGHOST_EXTRAS:-proxy,gliner2,mcp,index,cache}"
 SOURCE="${PIIGHOST_SOURCE:-git+https://github.com/jamon8888/hacienda-ghost.git}"
 
 echo ""
 echo "piighost installer"
 echo "  mode   : $MODE"
+echo "    full       Anonymizing proxy + MCP tools + RAG (default)"
+echo "    mcp-only   MCP tools + RAG only, no proxy"
+echo "    strict     System-wide proxy (advanced, requires admin)"
 echo "  extras : $EXTRAS"
 echo "  source : $SOURCE"
 echo ""
