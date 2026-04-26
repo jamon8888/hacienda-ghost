@@ -303,6 +303,94 @@ def _build_mcp(*, vault_dir) -> FastMCP:
             params={"name": name, "force": force},
         )
 
+    # ------------------------------------------------------------------
+    # Folder/project resolution + audit (hacienda Cowork plugin surface)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(
+        name="resolve_project_for_folder",
+        description=by_name["resolve_project_for_folder"].description,
+    )
+    async def resolve_project_for_folder(folder: str) -> dict:
+        return await _lazy_dispatch(
+            by_name["resolve_project_for_folder"],
+            params={"folder": folder},
+        )
+
+    @mcp.tool(
+        name="bootstrap_client_folder",
+        description=by_name["bootstrap_client_folder"].description,
+    )
+    async def bootstrap_client_folder(folder: str) -> dict:
+        return await _lazy_dispatch(
+            by_name["bootstrap_client_folder"],
+            params={"folder": folder},
+        )
+
+    @mcp.tool(
+        name="session_audit_read",
+        description=by_name["session_audit_read"].description,
+    )
+    async def session_audit_read(session_id: str, limit: int = 1000) -> dict:
+        return await _lazy_dispatch(
+            by_name["session_audit_read"],
+            params={"session_id": session_id, "limit": limit},
+        )
+
+    @mcp.tool(
+        name="session_audit_append",
+        description=by_name["session_audit_append"].description,
+    )
+    async def session_audit_append(
+        session_id: str,
+        op: str,
+        token: str = "",
+        caller_kind: str = "skill",
+    ) -> dict:
+        params = {"session_id": session_id, "op": op, "caller_kind": caller_kind}
+        if token:
+            params["token"] = token
+        return await _lazy_dispatch(
+            by_name["session_audit_append"],
+            params=params,
+        )
+
+    # ------------------------------------------------------------------
+    # Resources (read-only, polled by clients)
+    # ------------------------------------------------------------------
+
+    @mcp.resource(
+        "piighost://folders/{b64_path}/status",
+        description="Indexing status for a folder (b64_path is urlsafe-base64 of the absolute path, no padding).",
+    )
+    async def folder_status(b64_path: str) -> dict:
+        """Decode the URL-safe base64 path and forward to the daemon's
+        folder_status RPC. The skill polls this resource to stream
+        indexing progress to the user."""
+        import base64
+        # Re-pad and decode
+        pad = "=" * (-len(b64_path) % 4)
+        try:
+            folder = base64.urlsafe_b64decode((b64_path + pad).encode()).decode("utf-8")
+        except Exception as exc:
+            raise ValueError(f"invalid b64_path: {exc!r}") from exc
+        # folder_status isn't in TOOL_CATALOG (it's a resource backend,
+        # not a tool); call the RPC manually with a generic spec.
+        await _ensure()
+        from piighost.mcp.tools import ToolSpec
+        spec = ToolSpec(
+            name="folder_status",
+            rpc_method="folder_status",
+            description="Folder status (resource backend).",
+            timeout_s=10.0,
+        )
+        return await dispatch(
+            spec,
+            params={"folder": folder},
+            base_url=_conn["base_url"],
+            token=_conn["token"],
+        )
+
     return mcp
 
 

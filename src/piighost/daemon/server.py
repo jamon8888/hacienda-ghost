@@ -287,4 +287,23 @@ async def _dispatch(
             params["name"], force=params.get("force", False)
         )
         return {"deleted": deleted, "name": params["name"]}
+    if method == "resolve_project_for_folder":
+        return await svc.resolve_project_for_folder(params["folder"])
+    if method == "bootstrap_client_folder":
+        return await svc.bootstrap_client_folder(params["folder"])
+    if method == "folder_status":
+        return await svc.folder_status(params["folder"])
+    if method == "session_audit_read":
+        return await svc.session_audit_read(
+            params["session_id"],
+            limit=params.get("limit", 1000),
+        )
+    if method == "session_audit_append":
+        return await svc.session_audit_append(
+            params["session_id"],
+            op=params["op"],
+            token=params.get("token"),
+            caller_kind=params.get("caller_kind", "skill"),
+            metadata=params.get("metadata"),
+        )
     raise ValueError("Unknown method")

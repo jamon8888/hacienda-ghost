@@ -112,4 +112,30 @@ TOOL_CATALOG: list[ToolSpec] = [
         description="Delete a project (requires force=True for non-empty).",
         timeout_s=30.0,
     ),
+
+    # Folder/project resolution + audit (used by the hacienda Cowork plugin)
+    ToolSpec(
+        name="resolve_project_for_folder",
+        rpc_method="resolve_project_for_folder",
+        description="Derive the project name for a filesystem folder.",
+        timeout_s=5.0,
+    ),
+    ToolSpec(
+        name="bootstrap_client_folder",
+        rpc_method="bootstrap_client_folder",
+        description="Idempotently ensure the project for a folder exists.",
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="session_audit_read",
+        rpc_method="session_audit_read",
+        description="Read a session's (=project's) audit log.",
+        timeout_s=10.0,
+    ),
+    ToolSpec(
+        name="session_audit_append",
+        rpc_method="session_audit_append",
+        description="Append an event to a session's (=project's) audit log.",
+        timeout_s=5.0,
+    ),
 ]

@@ -760,6 +760,134 @@ class PIIGhostService:
             shutil.rmtree(project_dir)
         return self._registry.delete(name)
 
+    # ---- folder/project resolution (used by the hacienda Cowork plugin) ----
+
+    async def resolve_project_for_folder(self, folder: str | Path) -> dict:
+        """Derive the project name for a filesystem folder. Read-only.
+
+        Returns ``{"folder": <abs_path>, "project": <slug>}``. The slug
+        is computed by :func:`piighost.service.project_path.derive_project_from_path`
+        — same rule the auto-create path uses, so the returned project
+        is the one ``index_path`` would write to if invoked on the
+        same folder."""
+        from piighost.service.project_path import derive_project_from_path
+        path = Path(folder).expanduser().resolve()
+        return {
+            "folder": str(path),
+            "project": derive_project_from_path(path),
+        }
+
+    async def bootstrap_client_folder(self, folder: str | Path) -> dict:
+        """Idempotently ensure the project for ``folder`` exists in the
+        registry and its on-disk vault directory is created. Returns
+        ``{"folder", "project", "created"}`` where ``created`` is
+        ``True`` when the project was newly registered."""
+        from piighost.service.project_path import derive_project_from_path
+        path = Path(folder).expanduser().resolve()
+        project_name = derive_project_from_path(path)
+        info = self._registry.get(project_name)
+        created = info is None
+        if created:
+            self._registry.create(project_name)
+        # Also ensure the per-project _ProjectService exists so its
+        # vault.db / indexing.sqlite directories are materialised.
+        await self._get_project(project_name, auto_create=True)
+        return {
+            "folder": str(path),
+            "project": project_name,
+            "created": created,
+        }
+
+    async def folder_status(self, folder: str | Path) -> dict:
+        """Lightweight read-only status of the project that ``folder``
+        maps to. Used by the ``piighost://folders/{b64}/status``
+        resource to power the plugin's polling. Returns:
+
+            {"folder", "project", "state", "total_docs", "total_chunks",
+             "last_indexed_at"}
+
+        ``state`` is ``"empty"`` when no docs are indexed,
+        ``"indexed"`` otherwise. Future work: track in-flight
+        ``index_path`` calls and report ``"indexing"`` with progress.
+        """
+        from piighost.service.project_path import derive_project_from_path
+        path = Path(folder).expanduser().resolve()
+        project_name = derive_project_from_path(path)
+        info = self._registry.get(project_name)
+        if info is None:
+            return {
+                "folder": str(path),
+                "project": project_name,
+                "state": "empty",
+                "total_docs": 0,
+                "total_chunks": 0,
+                "last_indexed_at": None,
+            }
+        svc = await self._get_project(project_name, auto_create=False)
+        status = await svc.index_status(limit=1)
+        last = status.files[0].indexed_at if status.files else None
+        return {
+            "folder": str(path),
+            "project": project_name,
+            "state": "indexed" if status.total_docs > 0 else "empty",
+            "total_docs": status.total_docs,
+            "total_chunks": status.total_chunks,
+            "last_indexed_at": last,
+        }
+
+    # ---- audit log RPCs (used by /audit slash command) ----
+
+    async def session_audit_read(
+        self, session_id: str, *, limit: int = 1000
+    ) -> dict:
+        """Read the audit log for a given session (= project name).
+
+        Returns ``{"session_id", "events": [...]}``. Events are
+        JSONL rows previously appended by ``AuditLogger.record()``.
+        Most recent ``limit`` events are returned (default 1000)."""
+        import json
+        info = self._registry.get(session_id)
+        if info is None:
+            return {"session_id": session_id, "events": []}
+        log_path = self._vault_dir / "projects" / session_id / "audit.log"
+        if not log_path.exists():
+            return {"session_id": session_id, "events": []}
+        events: list[dict] = []
+        with log_path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return {"session_id": session_id, "events": events[-limit:]}
+
+    async def session_audit_append(
+        self,
+        session_id: str,
+        *,
+        op: str,
+        token: str | None = None,
+        caller_kind: str = "skill",
+        metadata: dict | None = None,
+    ) -> dict:
+        """Append an event to a session's (= project's) audit log.
+
+        Used by the plugin to record tool dispatches that aren't
+        already audited at the daemon layer (e.g. an LLM-driven
+        retrieval that should leave a trail). Returns
+        ``{"session_id", "appended": true}``."""
+        svc = await self._get_project(session_id, auto_create=False)
+        svc._audit.record(
+            op=op,
+            token=token,
+            caller_kind=caller_kind,
+            metadata=metadata or {},
+        )
+        return {"session_id": session_id, "appended": True}
+
     async def flush(self) -> None:
         for svc in self._cache.values():
             await svc.flush()
