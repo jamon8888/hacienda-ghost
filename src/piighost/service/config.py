@@ -31,7 +31,12 @@ class VaultSection(BaseModel):
 
 class DetectorSection(BaseModel):
     backend: Literal["gliner2", "regex_only"] = "gliner2"
-    gliner2_model: str = "jamon8888/french-pii-legal-ner-quantized"
+    # Default GLiNER2 checkpoint (loadable via GLiNER2.from_pretrained).
+    # NOTE: jamon8888/french-pii-legal-ner-quantized is a GLiNER v1
+    # adapter (base + safetensors) and needs a different loader; tracked
+    # as a follow-up. Switch to fastino/gliner2-large-v1 for better
+    # accuracy than -multi-v1 if your hardware can spare the RAM.
+    gliner2_model: str = "fastino/gliner2-multi-v1"
     threshold: float = 0.5
     labels: list[str] = Field(
         default_factory=lambda: [
