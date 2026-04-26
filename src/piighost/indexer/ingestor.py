@@ -10,8 +10,11 @@ from pathlib import Path
 
 _PLAIN_TEXT_EXTENSIONS = {
     # Files readable directly with the stdlib — no parser needed.
-    # .eml is RFC 5322 text, fine to ingest as-is for embedding.
+    # .eml is RFC 5322 text. .csv/.tsv/.jsonl are structured but plain
+    # text, fine to ingest as-is for chunking/embedding (the chunker
+    # treats them as line-oriented text).
     ".txt", ".md", ".rst", ".html", ".htm", ".eml",
+    ".csv", ".tsv", ".jsonl",
 }
 
 _BINARY_EXTENSIONS = {
