@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EntityRef(BaseModel):
@@ -194,6 +194,8 @@ class SubjectAccessReport(BaseModel):
     data-subject access request: who, what categories, where (docs),
     how (purposes/legal bases), when (retention), with whom (recipients).
     """
+    model_config = ConfigDict(extra="forbid")
+
     v: Literal[1] = 1
     generated_at: int
     project: str
@@ -294,6 +296,8 @@ class ProcessingRegister(BaseModel):
     ControllerProfile. Fields the system can't infer are surfaced
     via ``manual_fields`` so the avocat knows what to complete.
     """
+    model_config = ConfigDict(extra="forbid")
+
     v: Literal[1] = 1
     generated_at: int
     project: str
@@ -357,6 +361,8 @@ class CNILPIAInputs(BaseModel):
 
 class DPIAScreening(BaseModel):
     """DPIA-lite screening — does this project require a full DPIA?"""
+    model_config = ConfigDict(extra="forbid")
+
     v: Literal[1] = 1
     generated_at: int
     project: str

@@ -22,12 +22,44 @@ import re
 import time
 from importlib import resources
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Union
+
+from pydantic import TypeAdapter, ValidationError
+
+from piighost.service.models import (
+    DPIAScreening,
+    ProcessingRegister,
+    SubjectAccessReport,
+)
 
 # Profile names are user-controlled and end up concatenated into a Path.
 # Restrict to a strict identifier shape to block traversal / weird input
 # before any filesystem lookup.
 _PROFILE_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+_COMPLIANCE_UNION_ADAPTER = TypeAdapter(
+    Union[ProcessingRegister, DPIAScreening, SubjectAccessReport]
+)
+
+
+def _validate_compliance_dict(data: dict) -> None:
+    """Raise ValueError if *data* doesn't match any known compliance model.
+
+    Uses ``model_config.extra = "forbid"`` semantics through the union
+    adapter so unknown keys are rejected — closes the poisoned-dict
+    attack surface flagged in Phase 2 followup #3.
+    """
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"render_compliance_doc data must be a dict; got {type(data).__name__}"
+        )
+    try:
+        _COMPLIANCE_UNION_ADAPTER.validate_python(data)
+    except ValidationError as exc:
+        raise ValueError(
+            "render_compliance_doc data does not match any known compliance "
+            f"model (ProcessingRegister / DPIAScreening / SubjectAccessReport): {exc}"
+        ) from exc
 
 # Doctype detection: which top-level keys identify which structured doc?
 _DOCTYPE_MARKERS = {
@@ -260,6 +292,10 @@ def render_compliance_doc(
         ``{path, format, size_bytes, rendered_at}`` — matches the shape
         of :class:`piighost.service.models.RenderResult`.
     """
+    # Validate data against the 3-way union BEFORE doing any I/O.
+    # This blocks adversarial input from a poisoned MCP context.
+    _validate_compliance_dict(data)
+
     if format not in ("md", "docx", "pdf"):
         raise ValueError(f"Unsupported format: {format!r}")
     if not _PROFILE_RE.match(profile):
