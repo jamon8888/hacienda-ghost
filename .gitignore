@@ -181,3 +181,18 @@ sandbox/
 !.claude/skills/
 .worktrees/
 
+# Audit-tmp scratch dir (created during the Phase 5 cleanup)
+_audit_tmp/
+
+# piighost runtime state — vault databases, project registry, daemon
+# state, and BM25 indexes. Never commit these: SQLite WAL/SHM files
+# regenerate themselves and binary blobs conflict-prone. The vault.db
+# files in particular hold the originals (the whole point of the
+# vault), so committing them would risk leaking real client PII.
+.piighost/
+plugin.zip
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db-shm
+*.db-wal
