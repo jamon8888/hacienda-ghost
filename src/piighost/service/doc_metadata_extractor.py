@@ -215,6 +215,35 @@ def _party_token(text: str, label: str, hash_length: int = 8) -> str:
     return f"<<{label}:{digest}>>"
 
 
+def _anonymise_authors(authors: list[str] | None) -> list[str]:
+    """Replace raw author names with deterministic placeholder tokens.
+
+    kreuzberg returns the raw 'authors' field from PDF/Office metadata.
+    Storing those names as-is in ``documents_meta`` would leak through
+    the Phase 2 processing_register. Each non-blank author becomes
+    ``<<author:HASH8>>`` (sha256 of label+text, same scheme as
+    LabelHashPlaceholderFactory).
+
+    Empty / None / whitespace-only inputs are filtered out.
+    Duplicates are deduplicated while preserving first-seen order.
+    """
+    if not authors:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in authors:
+        if not isinstance(raw, str):
+            continue
+        text = raw.strip()
+        if not text:
+            continue
+        token = _party_token(text, "author")
+        if token not in seen:
+            seen.add(token)
+            out.append(token)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -287,11 +316,12 @@ def build_metadata(
 
     # 5. Assemble DocumentMetadata
     authors_raw = kreuzberg_meta.get("authors")
-    authors: list[str] = (
+    raw_authors: list[str] = (
         authors_raw if isinstance(authors_raw, list) else
         [authors_raw] if isinstance(authors_raw, str) and authors_raw else
         []
     )
+    authors = _anonymise_authors(raw_authors)
 
     return DocumentMetadata(
         doc_id=doc_id,

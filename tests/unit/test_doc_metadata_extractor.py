@@ -88,7 +88,10 @@ def test_build_metadata_uses_kreuzberg_title_and_authors(tmp_path):
         detections=[],
     )
     assert meta.doc_title == "Service Agreement 2026"
-    assert meta.doc_authors == ["Jean Martin"]
+    # doc_authors must contain the anonymised token, never the raw name
+    assert len(meta.doc_authors) == 1
+    assert meta.doc_authors[0].startswith("<<author:")
+    assert "Jean Martin" not in meta.doc_authors[0]
     assert meta.doc_format == "pdf"
     assert meta.doc_page_count == 5
     assert meta.doc_language == "fr"
