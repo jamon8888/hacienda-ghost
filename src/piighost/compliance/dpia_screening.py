@@ -3,6 +3,22 @@ inputs for the official CNIL PIA software.
 
 We do NOT generate a full DPIA — that's CNIL's tool. We only screen
 and pre-fill the inputs.
+
+Triggers covered (6/9 from CNIL guidance):
+  - art35.3.b   sensible à grande échelle
+  - cnil_2      traitement à grande échelle
+  - cnil_4      personnes vulnérables (santé)
+  - cnil_5      usage innovant (IA/NER) — toujours présent (notre cas)
+  - cnil_7      identité civile complète
+  - cnil_9      données salariés (profession=rh)
+
+Intentionally not implemented in this phase:
+  - cnil_3 (recoupement de fichiers) — requires multi-project state
+    crossing the per-project isolation boundary; deferred.
+  - cnil_1 (évaluation/scoring) — semantic, requires intent labelling
+    that we don't have yet.
+  - cnil_6 (exclusion d'un service) — out of scope for the regulated
+    professions targeted here.
 """
 from __future__ import annotations
 
