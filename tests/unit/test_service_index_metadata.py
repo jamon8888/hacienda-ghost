@@ -77,3 +77,21 @@ def test_index_populates_meta_for_multiple_subfolders(vault_dir, monkeypatch, tm
     assert "client1" in by_dossier
     assert "client2" in by_dossier
     asyncio.run(svc.close())
+
+
+def test_remove_doc_deletes_documents_meta_row(vault_dir, monkeypatch, tmp_path):
+    """Critical: removing a doc must also drop its documents_meta row.
+    Otherwise Phase 1 subject_access would surface stale references."""
+    svc = _svc(vault_dir, monkeypatch)
+    folder = tmp_path / "client_x"
+    folder.mkdir()
+    p = folder / "note.txt"
+    p.write_text("Hello world.", encoding="utf-8")
+
+    asyncio.run(svc.index_path(folder, project="rm-meta"))
+    proj = asyncio.run(svc._get_project("rm-meta", auto_create=False))
+    assert len(proj._indexing_store.list_documents_meta("rm-meta")) == 1
+
+    asyncio.run(svc.remove_doc(p, project="rm-meta"))
+    assert len(proj._indexing_store.list_documents_meta("rm-meta")) == 0
+    asyncio.run(svc.close())

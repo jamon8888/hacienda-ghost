@@ -408,6 +408,7 @@ class _ProjectService:
         self._vault.delete_doc_entities(existing.doc_id)
         self._vault.delete_indexed_file(existing.doc_id)
         self._chunk_store.delete_doc(existing.doc_id)
+        self._indexing_store.delete_document_meta(self._project_name, existing.doc_id)
         all_records = self._chunk_store.all_records()
         if all_records:
             self._bm25.rebuild(all_records)

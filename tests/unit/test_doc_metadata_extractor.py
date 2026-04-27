@@ -174,3 +174,36 @@ def test_build_metadata_dedups_same_label_same_text(tmp_path):
         ],
     )
     assert len(meta.parties) == 1
+
+
+def test_party_token_matches_LabelHashPlaceholderFactory():
+    """Cross-validation: build_metadata's party token MUST match the
+    canonical placeholder factory output. If these diverge silently,
+    Phase 1 subject_clustering breaks because the tokens in
+    documents_meta.parties won't match those in vault.entities.
+    """
+    from piighost.service.doc_metadata_extractor import _party_token
+    from piighost.placeholder import LabelHashPlaceholderFactory
+    from piighost.models import Detection, Entity, Span
+
+    factory = LabelHashPlaceholderFactory()
+
+    test_cases = [
+        ("Marie Dupont", "nom_personne"),
+        ("acme.fr", "email"),
+        ("Acme Corporation", "organisation"),
+        ("Jean", "prenom"),
+    ]
+    for text, label in test_cases:
+        local = _party_token(text, label)
+        det = Detection(
+            text=text, label=label,
+            position=Span(start_pos=0, end_pos=len(text)),
+            confidence=1.0,
+        )
+        entity = Entity(detections=(det,))
+        canonical = factory.create([entity])[entity]
+        assert local == canonical, (
+            f"Token divergence for ({text!r}, {label!r}): "
+            f"_party_token={local!r} factory={canonical!r}"
+        )

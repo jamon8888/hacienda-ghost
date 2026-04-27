@@ -148,7 +148,7 @@ class DocumentMetadata(BaseModel):
     doc_date: int | None = None
     doc_date_source: Literal[
         "kreuzberg_creation", "kreuzberg_modified",
-        "heuristic_detected", "filename", "none",
+        "heuristic_detected", "none",
     ] = "none"
 
     # Free metadata from kreuzberg (FLAT in v4.9.4 — not nested under "pdf")
