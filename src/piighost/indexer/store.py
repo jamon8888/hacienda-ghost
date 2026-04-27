@@ -125,6 +125,87 @@ class ChunkStore:
         rows = tbl.to_arrow().to_pylist()
         return [{k: v for k, v in r.items() if k != "vector"} for r in rows]
 
+    def chunks_for_doc_ids(self, doc_ids: list[str]) -> list[dict]:
+        """Return all chunk records whose ``doc_id`` is in the given list.
+
+        Used by ``subject_access`` (to build excerpts) and
+        ``forget_subject`` (to find chunks needing rewrite).
+
+        Returns plain dicts (no ``vector`` field for read-only callers).
+        """
+        if not doc_ids:
+            return []
+        if self._meta_mode:
+            return [dict(r) for r in self._meta if r["doc_id"] in doc_ids]
+        if not self._ensure_db_for_read():
+            return []
+        table_name = "chunks"
+        if table_name not in self._db.list_tables().tables:
+            return []
+        tbl = self._db.open_table(table_name)
+        # Validate doc_ids against the safe-id pattern to avoid SQL injection
+        # in the Lance WHERE clause.
+        safe_ids = []
+        for d in doc_ids:
+            if not _SAFE_DOC_ID_RE.fullmatch(d):
+                raise ValueError(f"unsafe doc_id format: {d!r}")
+            safe_ids.append(d)
+        in_clause = ", ".join(f"'{d}'" for d in safe_ids)
+        rows = tbl.search().where(f"doc_id IN ({in_clause})").to_list()
+        return [{k: v for k, v in r.items() if k != "vector"} for r in rows]
+
+    def update_chunks(
+        self, updates: list[tuple[dict, str, list[float]]],
+    ) -> None:
+        """Update existing chunks in place.
+
+        ``updates`` is a list of ``(chunk_record, new_text, new_vector)``
+        tuples. ``chunk_record`` is the dict you got from
+        ``chunks_for_doc_ids`` — it carries the ``chunk_id``,
+        ``doc_id``, and ``file_path`` we need to rewrite the entry
+        while preserving identity at the (doc_id, chunk_id) level.
+
+        For LanceDB, in-place update is achieved via DELETE + INSERT
+        on the chunk_id, so the row keeps the same chunk_id from the
+        consumer's perspective. For ``_meta_mode``, mutate the
+        in-memory list in place.
+        """
+        if not updates:
+            return
+        if self._meta_mode:
+            for record, new_text, _new_vec in updates:
+                target_id = record.get("chunk_id")
+                target_doc = record.get("doc_id")
+                for r in self._meta:
+                    if r.get("chunk_id") == target_id and r.get("doc_id") == target_doc:
+                        r["chunk"] = new_text
+                        break
+            return
+        if not self._ensure_db_for_read():
+            return
+        table_name = "chunks"
+        if table_name not in self._db.list_tables().tables:
+            return
+        tbl = self._db.open_table(table_name)
+        for record, new_text, new_vector in updates:
+            chunk_id = record.get("chunk_id")
+            doc_id = record.get("doc_id")
+            if not chunk_id or not doc_id:
+                continue
+            if not _SAFE_DOC_ID_RE.fullmatch(doc_id):
+                raise ValueError(f"unsafe doc_id format: {doc_id!r}")
+            # chunk_id format is "{doc_id}:{i}" — escape single quotes
+            esc_chunk_id = chunk_id.replace("'", "''")
+            tbl.delete(f"chunk_id = '{esc_chunk_id}'")
+            new_record = {
+                "doc_id": doc_id,
+                "file_path": record.get("file_path", ""),
+                "chunk_id": chunk_id,
+                "chunk": new_text,
+                "vector": new_vector,
+            }
+            tbl.add([new_record])
+
     def vector_search(
         self,
         embedding: list[float],
