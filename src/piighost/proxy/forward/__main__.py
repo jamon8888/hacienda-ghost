@@ -75,15 +75,25 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 async def _serve(args: argparse.Namespace) -> int:
+    import shutil
+
     from mitmproxy.options import Options
     from mitmproxy.tools.dump import DumpMaster
+
+    # mitmproxy looks for its signing CA as "mitmproxy-ca.pem" inside confdir.
+    # Copy our CA there so generated leaf certs are signed by our trusted root.
+    ca_dir = args.ca_cert.parent
+    ca_dir.mkdir(parents=True, exist_ok=True)
+    mitm_ca = ca_dir / "mitmproxy-ca.pem"
+    if not mitm_ca.exists():
+        shutil.copy2(str(args.ca_cert), str(mitm_ca))
 
     opts = Options(
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         mode=["regular"],  # forward proxy
         ssl_insecure=False,
-        certs=[f"*={args.ca_cert}"],
+        confdir=str(ca_dir),
         # CONNECT to non-Anthropic hosts: tunnel raw, don't decrypt
         ignore_hosts=[
             r"^(?!api\.anthropic\.com).*",
