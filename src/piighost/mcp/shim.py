@@ -359,36 +359,22 @@ def _build_mcp(*, vault_dir) -> FastMCP:
     # Resources (read-only, polled by clients)
     # ------------------------------------------------------------------
 
-    @mcp.resource(
-        "piighost://folders/{b64_path}/status",
-        description="Indexing status for a folder (b64_path is urlsafe-base64 of the absolute path, no padding).",
-    )
-    async def folder_status(b64_path: str) -> dict:
-        """Decode the URL-safe base64 path and forward to the daemon's
-        folder_status RPC. The skill polls this resource to stream
-        indexing progress to the user."""
-        import base64
-        # Re-pad and decode
-        pad = "=" * (-len(b64_path) % 4)
-        try:
-            folder = base64.urlsafe_b64decode((b64_path + pad).encode()).decode("utf-8")
-        except Exception as exc:
-            raise ValueError(f"invalid b64_path: {exc!r}") from exc
-        # folder_status isn't in TOOL_CATALOG (it's a resource backend,
-        # not a tool); call the RPC manually with a generic spec.
-        await _ensure()
-        from piighost.mcp.tools import ToolSpec
-        spec = ToolSpec(
-            name="folder_status",
-            rpc_method="folder_status",
-            description="Folder status (resource backend).",
-            timeout_s=10.0,
-        )
-        return await dispatch(
-            spec,
+    @mcp.tool(name="folder_status", description=by_name["folder_status"].description)
+    async def folder_status(folder: str) -> dict:
+        """Indexing status for a folder. Returns the dict shape:
+        ``{folder, project, state, total_docs, total_chunks,
+        last_indexed_at, errors, errors_truncated, total_errors}``.
+
+        Replaces the previously-published
+        ``piighost://folders/{b64_path}/status`` resource. Templated
+        MCP resources don't surface in ``resources/list`` (they go to
+        ``resources/templates/list`` which not every client probes), so
+        skills couldn't discover the resource without prior knowledge of
+        the URI. Plain tool surface fixes that — the model sees
+        ``folder_status`` in ``tools/list`` like any other tool."""
+        return await _lazy_dispatch(
+            by_name["folder_status"],
             params={"folder": folder},
-            base_url=_conn["base_url"],
-            token=_conn["token"],
         )
 
     return mcp

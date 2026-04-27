@@ -127,6 +127,18 @@ TOOL_CATALOG: list[ToolSpec] = [
         timeout_s=30.0,
     ),
     ToolSpec(
+        name="folder_status",
+        rpc_method="folder_status",
+        description=(
+            "Indexing status for a folder: state, total_docs, "
+            "total_chunks, last_indexed_at, errors[], errors_truncated, "
+            "total_errors. Replaces the piighost://folders/{b64}/status "
+            "resource — much more reliable than templated resources "
+            "across MCP clients."
+        ),
+        timeout_s=10.0,
+    ),
+    ToolSpec(
         name="session_audit_read",
         rpc_method="session_audit_read",
         description="Read a session's (=project's) audit log.",
