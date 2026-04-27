@@ -47,7 +47,7 @@ def test_render_registre_md(vault_dir, monkeypatch, tmp_path):
     asyncio.run(svc.create_project("render-md"))
     register = asyncio.run(svc.processing_register(project="render-md"))
 
-    output = tmp_path / "registre.md"
+    output = Path.home() / ".piighost" / "exports" / "registre.md"
     result = asyncio.run(svc.render_compliance_doc(
         data=register.model_dump(),
         format="md",
@@ -68,7 +68,7 @@ def test_render_dpia_md(vault_dir, monkeypatch, tmp_path):
     asyncio.run(svc.create_project("render-dpia"))
     dpia = asyncio.run(svc.dpia_screening(project="render-dpia"))
 
-    output = tmp_path / "dpia.md"
+    output = Path.home() / ".piighost" / "exports" / "dpia.md"
     asyncio.run(svc.render_compliance_doc(
         data=dpia.model_dump(),
         format="md",
@@ -85,7 +85,9 @@ def test_render_dpia_md(vault_dir, monkeypatch, tmp_path):
 def test_render_with_avocat_profile_uses_avocat_template(
     vault_dir, monkeypatch, tmp_path,
 ):
-    """Verify profile-specific template selection."""
+    """Verify profile-specific template selection AND that the avocat
+    template still walks through the generic include (so the fallback
+    chain — not just the leaf — is wired up)."""
     pytest.importorskip("jinja2")
     svc = _svc(vault_dir, monkeypatch)
     asyncio.run(svc.controller_profile_set(
@@ -94,7 +96,7 @@ def test_render_with_avocat_profile_uses_avocat_template(
     ))
     asyncio.run(svc.create_project("render-av"))
     register = asyncio.run(svc.processing_register(project="render-av"))
-    output = tmp_path / "registre_avocat.md"
+    output = Path.home() / ".piighost" / "exports" / "registre_avocat.md"
     asyncio.run(svc.render_compliance_doc(
         data=register.model_dump(),
         format="md",
@@ -102,8 +104,37 @@ def test_render_with_avocat_profile_uses_avocat_template(
         output_path=str(output),
     ))
     content = output.read_text(encoding="utf-8")
-    # Avocat template includes a specific mention
+    # Avocat-specific marker (top-of-template blockquote)
     assert "barreau" in content.lower() or "CNB" in content
+    # Generic include must have rendered too — section 1 heading lives
+    # in generic/registre.md.j2 and proves the include chain fired.
+    assert "Identité du responsable de traitement" in content
+    asyncio.run(svc.close())
+
+
+def test_render_user_override_takes_priority(vault_dir, monkeypatch, tmp_path):
+    """A user-provided template at ~/.piighost/templates/<profile>/<doctype>.md.j2
+    overrides the bundled template."""
+    pytest.importorskip("jinja2")
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("render-override"))
+    register = asyncio.run(svc.processing_register(project="render-override"))
+
+    # Write a sentinel template under the monkeypatched home.
+    user_tpl = Path.home() / ".piighost" / "templates" / "generic" / "registre.md.j2"
+    user_tpl.parent.mkdir(parents=True, exist_ok=True)
+    user_tpl.write_text("USER_OVERRIDE_SENTINEL project={{ project }}\n", encoding="utf-8")
+
+    output = Path.home() / ".piighost" / "exports" / "registre_override.md"
+    asyncio.run(svc.render_compliance_doc(
+        data=register.model_dump(),
+        format="md",
+        profile="generic",
+        output_path=str(output),
+    ))
+    content = output.read_text(encoding="utf-8")
+    assert "USER_OVERRIDE_SENTINEL" in content
+    assert "render-override" in content
     asyncio.run(svc.close())
 
 
@@ -117,9 +148,10 @@ def test_render_pdf_skipped_when_extra_missing(vault_dir, monkeypatch, tmp_path)
     svc = _svc(vault_dir, monkeypatch)
     asyncio.run(svc.create_project("render-no-pdf"))
     register = asyncio.run(svc.processing_register(project="render-no-pdf"))
+    output = Path.home() / ".piighost" / "exports" / "out.pdf"
     with pytest.raises((ImportError, RuntimeError)):
         asyncio.run(svc.render_compliance_doc(
             data=register.model_dump(), format="pdf",
-            profile="generic", output_path=str(tmp_path / "out.pdf"),
+            profile="generic", output_path=str(output),
         ))
     asyncio.run(svc.close())

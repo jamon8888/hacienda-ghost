@@ -18,10 +18,16 @@ or vault accesses. Templates therefore cannot leak raw PII.
 """
 from __future__ import annotations
 
+import re
 import time
 from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
+
+# Profile names are user-controlled and end up concatenated into a Path.
+# Restrict to a strict identifier shape to block traversal / weird input
+# before any filesystem lookup.
+_PROFILE_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 
 # Doctype detection: which top-level keys identify which structured doc?
 _DOCTYPE_MARKERS = {
@@ -55,18 +61,22 @@ def _load_template(
 ) -> tuple[str, str]:
     """Resolve the template chain and return ``(name, source)``.
 
-    The returned ``name`` is a stable identifier used by Jinja for include/
-    inheritance bookkeeping; ``source`` is the template body.
+    The returned ``name`` is a stable relative identifier (e.g.
+    ``"generic/registre.md.j2"``) used by Jinja for include/inheritance
+    bookkeeping; ``source`` is the template body.
 
     Raises FileNotFoundError if no template can be located.
     """
+    if not _PROFILE_RE.match(profile):
+        raise ValueError(f"Invalid profile name: {profile!r}")
+
     rel = f"{doctype}.{fmt}.j2"
 
     # 1. user override
     user_path = _user_template_root() / profile / rel
     if user_path.is_file():
         return (
-            f"user:{profile}/{rel}",
+            f"{profile}/{rel}",
             user_path.read_text(encoding="utf-8"),
         )
 
@@ -75,7 +85,7 @@ def _load_template(
     profile_res = pkg_root / profile / rel
     if profile_res.is_file():
         return (
-            f"bundled:{profile}/{rel}",
+            f"{profile}/{rel}",
             profile_res.read_text(encoding="utf-8"),
         )
 
@@ -83,7 +93,7 @@ def _load_template(
     generic_res = pkg_root / "generic" / rel
     if generic_res.is_file():
         return (
-            f"bundled:generic/{rel}",
+            f"generic/{rel}",
             generic_res.read_text(encoding="utf-8"),
         )
 
@@ -113,13 +123,8 @@ def _build_jinja_env():
     user_root = _user_template_root()
 
     def _load(name: str) -> str | None:
-        # name is e.g. "generic/registre.md.j2" or "avocat/registre.md.j2"
-        # Strip any sentinel prefix ("user:" / "bundled:") if present.
-        for sentinel in ("user:", "bundled:"):
-            if name.startswith(sentinel):
-                name = name[len(sentinel):]
-                break
-        # Try user override first, then bundled.
+        # name is a relative path like "generic/registre.md.j2" or
+        # "avocat/registre.md.j2". Try user override first, then bundled.
         user_path = user_root / name
         if user_path.is_file():
             return user_path.read_text(encoding="utf-8")
@@ -146,10 +151,7 @@ def _render_md(
     # Resolve the root template name so include/extends inside it can
     # use the same loader.
     name, _source = _load_template(profile, doctype, "md")
-    # The FunctionLoader strips the sentinel prefix; pass the relative
-    # path directly.
-    rel_name = name.split(":", 1)[1] if ":" in name else name
-    template = env.get_template(rel_name)
+    template = env.get_template(name)
     return template.render(**data)
 
 
@@ -246,8 +248,11 @@ def render_compliance_doc(
         ``medecin``, ``expert_comptable``, ``rh``). Falls back to
         ``generic`` if a profession-specific template is missing.
     output_path:
-        Destination path. Required (the renderer always writes to disk
-        so downstream tooling can attach the artefact).
+        Destination path. If omitted, defaults to
+        ``~/.piighost/exports/<project>-<doctype>-<ts>.<ext>``. Must
+        resolve under ``~/.piighost/`` — the renderer rejects paths
+        outside that root to keep MCP-callable surfaces from clobbering
+        arbitrary files.
 
     Returns
     -------
@@ -257,13 +262,33 @@ def render_compliance_doc(
     """
     if format not in ("md", "docx", "pdf"):
         raise ValueError(f"Unsupported format: {format!r}")
-    if not output_path:
-        raise ValueError("output_path is required")
-
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
+    if not _PROFILE_RE.match(profile):
+        raise ValueError(f"Invalid profile name: {profile!r}")
 
     doctype = _detect_doctype(data)
+
+    if not output_path:
+        project = data.get("project", "doc")
+        ts = int(time.time())
+        ext = format  # "md" | "pdf" | "docx"
+        out_dir = Path.home() / ".piighost" / "exports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        output_path = str(out_dir / f"{project}-{doctype}-{ts}.{ext}")
+
+    # Containment: the resolved output must live under ~/.piighost/. This
+    # blocks MCP callers from writing arbitrary files via ../ traversal or
+    # absolute paths.
+    exports_root = (Path.home() / ".piighost").resolve()
+    out_resolved = Path(output_path).resolve()
+    try:
+        out_resolved.relative_to(exports_root)
+    except ValueError as e:
+        raise ValueError(
+            f"output_path must be under {exports_root}; got {out_resolved}",
+        ) from e
+
+    out = out_resolved
+    out.parent.mkdir(parents=True, exist_ok=True)
 
     # Always render the Markdown body — both PDF and DOCX paths build on it.
     md_body = _render_md(data, profile=profile, doctype=doctype)
