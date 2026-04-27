@@ -167,11 +167,8 @@ def test_forgotten_audit_event_carries_only_hashes(vault_dir, monkeypatch):
 
 
 def test_subject_access_audit_event_redacts_raw_pii(vault_dir, monkeypatch):
-    """The 'subject_access' audit event metadata must not contain raw PII.
-
-    subject_token IS allowed (it's the token, not the original value).
-    But categories_found, doc IDs, etc. must not contain raw PII.
-    """
+    """The 'subject_access' audit event metadata must not contain raw PII
+    OR raw vault tokens (only hashes)."""
     svc = _svc(vault_dir, monkeypatch)
     asyncio.run(svc.create_project("leak-sa-audit"))
     proj = asyncio.run(svc._get_project("leak-sa-audit"))
@@ -189,4 +186,16 @@ def test_subject_access_audit_event_redacts_raw_pii(vault_dir, monkeypatch):
     # Raw PII must not appear in the audit metadata
     for raw in _KNOWN_RAW_PII:
         assert raw not in serialized
+    # Raw tokens must not appear in the audit event either
+    for tok in tokens:
+        assert tok not in serialized, (
+            f"Raw token '{tok}' leaked in subject_access audit event"
+        )
+    # Hashes ARE present and well-formed
+    md = sa_events[-1].metadata or {}
+    assert "token_hashes" in md
+    assert isinstance(md["token_hashes"], list)
+    for h in md["token_hashes"]:
+        assert len(h) == 8
+        assert all(c in "0123456789abcdef" for c in h)
     asyncio.run(svc.close())

@@ -228,15 +228,25 @@ class Vault:
         was anchored to). Idempotent: returns 0 if the token doesn't
         exist.
 
+        Wrapped in an explicit transaction so a crash between the two
+        DELETEs cannot leave a vault inconsistency (entity row
+        without its doc_entities backing rows).
+
         Used by Art. 17 right-to-be-forgotten cascade.
         """
-        cur = self._conn.execute(
-            "DELETE FROM doc_entities WHERE token = ?", (token,)
-        )
-        affected = cur.rowcount
-        self._conn.execute(
-            "DELETE FROM entities WHERE token = ?", (token,)
-        )
+        self._conn.execute("BEGIN")
+        try:
+            cur = self._conn.execute(
+                "DELETE FROM doc_entities WHERE token = ?", (token,)
+            )
+            affected = cur.rowcount
+            self._conn.execute(
+                "DELETE FROM entities WHERE token = ?", (token,)
+            )
+            self._conn.execute("COMMIT")
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
         return affected
 
     def docs_containing_tokens(self, tokens: list[str]) -> list[str]:

@@ -684,12 +684,18 @@ class _ProjectService:
 
         # 7. Audit (best-effort — failure must not block the report)
         try:
+            import hashlib
+            token_hashes = [
+                hashlib.sha256(t.encode("utf-8")).hexdigest()[:8]
+                for t in tokens
+            ]
             self._audit.record_v2(
                 event_type="subject_access",
                 project_id=self._project_name,
-                subject_token=tokens[0] if tokens else None,
+                subject_token=None,  # never log raw token — hashes only
                 metadata={
                     "cluster_size": len(tokens),
+                    "token_hashes": token_hashes,
                     "n_docs": len(doc_refs),
                     "n_excerpts": total_excerpts,
                 },
