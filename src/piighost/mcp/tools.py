@@ -185,4 +185,27 @@ TOOL_CATALOG: list[ToolSpec] = [
         ),
         timeout_s=120.0,  # re-embedding is the slowest path
     ),
+
+    # Controller profile (RGPD compliance — Phase 0 surface, exposed in Phase 2)
+    ToolSpec(
+        name="controller_profile_get",
+        rpc_method="controller_profile_get",
+        description=(
+            "Read the data controller profile (cabinet/profession/DPO/"
+            "purposes/retention). scope='global' returns ~/.piighost/"
+            "controller.toml; scope='project' returns the merged view "
+            "(global + per-project override) for a given project."
+        ),
+        timeout_s=2.0,
+    ),
+    ToolSpec(
+        name="controller_profile_set",
+        rpc_method="controller_profile_set",
+        description=(
+            "Atomically write the data controller profile. scope='global' "
+            "writes ~/.piighost/controller.toml; scope='project' writes a "
+            "per-project override containing only the fields that differ."
+        ),
+        timeout_s=5.0,
+    ),
 ]

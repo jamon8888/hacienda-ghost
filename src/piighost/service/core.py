@@ -1237,6 +1237,26 @@ class PIIGhostService:
         )
         return {"session_id": session_id, "appended": True}
 
+    # ---- controller profile (RGPD compliance — Phase 0 surface) ----
+
+    async def controller_profile_get(
+        self, *, scope: str = "global", project: str | None = None,
+    ) -> dict:
+        """Read the controller profile (global or merged per-project)."""
+        from piighost.service.controller_profile import ControllerProfileService
+        cp_svc = ControllerProfileService(self._vault_dir)
+        return cp_svc.get(scope=scope, project=project)  # type: ignore[arg-type]
+
+    async def controller_profile_set(
+        self, *, profile: dict,
+        scope: str = "global", project: str | None = None,
+    ) -> dict:
+        """Atomically write the controller profile."""
+        from piighost.service.controller_profile import ControllerProfileService
+        cp_svc = ControllerProfileService(self._vault_dir)
+        cp_svc.set(profile, scope=scope, project=project)  # type: ignore[arg-type]
+        return {"ok": True, "scope": scope, "project": project or ""}
+
     async def flush(self) -> None:
         for svc in self._cache.values():
             await svc.flush()

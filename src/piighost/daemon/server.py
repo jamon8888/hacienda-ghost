@@ -333,4 +333,15 @@ async def _dispatch(
             legal_basis=params.get("legal_basis", "c-opposition"),
         )
         return report.model_dump()
+    if method == "controller_profile_get":
+        return await svc.controller_profile_get(
+            scope=params.get("scope", "global"),
+            project=params.get("project") or None,
+        )
+    if method == "controller_profile_set":
+        return await svc.controller_profile_set(
+            profile=params["profile"],
+            scope=params.get("scope", "global"),
+            project=params.get("project") or None,
+        )
     raise ValueError("Unknown method")

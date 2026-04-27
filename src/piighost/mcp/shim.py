@@ -416,6 +416,35 @@ def _build_mcp(*, vault_dir) -> FastMCP:
                     "dry_run": dry_run, "legal_basis": legal_basis},
         )
 
+    # ------------------------------------------------------------------
+    # Controller profile (RGPD compliance — Phase 0 surface, Phase 2 wire)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(name="controller_profile_get",
+              description=by_name["controller_profile_get"].description)
+    async def controller_profile_get(
+        scope: str = "global", project: str = "",
+    ) -> dict:
+        result = await _lazy_dispatch(
+            by_name["controller_profile_get"],
+            params={"scope": scope, "project": project or None},
+        )
+        # Wrap raw dict for FastMCP's structured-content rule
+        return {"profile": result}
+
+    @mcp.tool(name="controller_profile_set",
+              description=by_name["controller_profile_set"].description)
+    async def controller_profile_set(
+        profile: dict, scope: str = "global", project: str = "",
+    ) -> dict:
+        return await _lazy_dispatch(
+            by_name["controller_profile_set"],
+            params={
+                "profile": profile, "scope": scope,
+                "project": project or None,
+            },
+        )
+
     return mcp
 
 
