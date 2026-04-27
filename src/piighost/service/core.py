@@ -228,6 +228,9 @@ class _ProjectService:
         # One-shot migration from legacy vault rows (idempotent after first call)
         backfill_from_vault(self._indexing_store, self._vault, self._project_name)
 
+        # Project root — used by build_metadata to compute dossier_id.
+        root = path.resolve() if path.is_dir() else path.parent.resolve()
+
         start = _time.monotonic()
         indexed = modified = deleted_count = skipped = unchanged = 0
         errors: list[str] = []
@@ -326,6 +329,34 @@ class _ProjectService:
                         entity_count=len(result.entities),
                         chunk_count=len(chunks),
                     ))
+                    # Populate per-document metadata for RGPD compliance
+                    # subsystem (Phases 1+2 consume documents_meta).
+                    try:
+                        from piighost.indexer.ingestor import extract_with_metadata
+                        from piighost.service.doc_metadata_extractor import build_metadata
+                        # Re-call extract_with_metadata to also grab kreuzberg's
+                        # raw metadata dict; for plain-text files we get {}.
+                        _, kmeta = await extract_with_metadata(p)
+                        doc_meta = build_metadata(
+                            doc_id=doc_id,
+                            file_path=p,
+                            project_root=root,
+                            content=text or "",
+                            kreuzberg_meta=kmeta,
+                            # result.entities are EntityRef (token+label+count),
+                            # not raw Detection objects.  Phase 0 does not need
+                            # detection-based date/party extraction; pass [] so
+                            # build_metadata uses kreuzberg + filename heuristics
+                            # only.  Phase 1 reads doc_entities from the vault.
+                            detections=[],
+                        )
+                        self._indexing_store.upsert_document_meta(
+                            self._project_name, doc_meta,
+                        )
+                    except Exception:  # noqa: BLE001
+                        # Metadata extraction is non-essential for retrieval —
+                        # don't fail the whole index_path on a metadata bug.
+                        pass
                     if kind == "modified":
                         modified += 1
                     else:
