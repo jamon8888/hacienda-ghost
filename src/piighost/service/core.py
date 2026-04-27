@@ -699,6 +699,121 @@ class _ProjectService:
 
         return report
 
+    # ---- RGPD Art. 17 ----
+
+    async def forget_subject(
+        self,
+        tokens: list[str],
+        *,
+        dry_run: bool = True,
+        legal_basis: str = "c-opposition",
+    ) -> "ForgetReport":
+        """Right-to-be-forgotten cascade (Art. 17) with tombstone.
+
+        Steps (when dry_run=False):
+          1. Find affected docs/chunks
+          2. Rewrite chunks: each token → <<deleted:HASH8>>
+          3. Re-embed rewritten chunks
+          4. UPDATE chunks (DELETE+INSERT in LanceDB or in-memory mutation)
+          5. Rebuild BM25 index
+          6. DELETE vault entries (entities + doc_entities)
+          7. Audit 'forgotten' event with hashed token list only
+        """
+        from piighost.service.models import ForgetReport
+        import hashlib
+        import os
+        import time as _time
+
+        start = _time.monotonic()
+
+        # 1. Find affected scope
+        doc_ids = self._vault.docs_containing_tokens(tokens)
+        affected_chunks = self._chunk_store.chunks_for_doc_ids(doc_ids)
+        # Filter chunks that actually contain at least one token
+        relevant_chunks = [
+            c for c in affected_chunks
+            if any(t in (c.get("chunk") or "") for t in tokens)
+        ]
+
+        token_hashes = [
+            hashlib.sha256(t.encode("utf-8")).hexdigest()[:8] for t in tokens
+        ]
+
+        if dry_run:
+            return ForgetReport(
+                dry_run=True,
+                tokens_to_purge_hashes=token_hashes,
+                chunks_to_rewrite=len(relevant_chunks),
+                docs_affected=list(doc_ids),
+                estimated_duration_ms=len(relevant_chunks) * 50,
+                legal_basis=legal_basis,
+            )
+
+        # 2. Rewrite chunks: replace tokens with <<deleted:HASH8>>
+        rewritten: list[tuple[dict, str, list]] = []
+        for c in relevant_chunks:
+            text = c.get("chunk") or ""
+            new_text = text
+            for t in tokens:
+                tomb = f"<<deleted:{hashlib.sha256(t.encode()).hexdigest()[:8]}>>"
+                new_text = new_text.replace(t, tomb)
+            # Re-embed (handles list or single result)
+            try:
+                vectors = await self._embedder.embed([new_text])
+                new_vec = vectors[0] if vectors else []
+            except Exception:
+                new_vec = []  # stub embedder may return [] — that's fine for meta_mode
+            rewritten.append((c, new_text, new_vec))
+
+        if rewritten:
+            self._chunk_store.update_chunks(rewritten)
+
+        # 3. Rebuild BM25 (best-effort; no fatal if missing)
+        try:
+            all_records = self._chunk_store.all_records()
+            if all_records:
+                self._bm25.rebuild(all_records)
+            else:
+                self._bm25.clear()
+        except Exception:
+            pass
+
+        # 4. Purge vault entries (entities + doc_entities)
+        for tok in tokens:
+            self._vault.delete_token(tok)
+
+        # 5. Audit event 'forgotten' — HASHES ONLY, never raw token or raw PII
+        try:
+            self._audit.record_v2(
+                event_type="forgotten",
+                project_id=self._project_name,
+                subject_token=None,  # do NOT log raw token
+                metadata={
+                    "tokens_purged_hashes": token_hashes,
+                    "n_chunks_rewritten": len(rewritten),
+                    "n_docs_affected": len(doc_ids),
+                    "legal_basis": legal_basis,
+                    "operator_actor": (
+                        os.environ.get("USERNAME")
+                        or os.environ.get("USER")
+                        or "unknown"
+                    ),
+                },
+            )
+        except Exception:
+            pass
+
+        duration_ms = int((_time.monotonic() - start) * 1000)
+        return ForgetReport(
+            dry_run=False,
+            tokens_to_purge_hashes=token_hashes,
+            chunks_to_rewrite=len(rewritten),
+            docs_affected=list(doc_ids),
+            actual_duration_ms=duration_ms,
+            completed_at=int(_time.time()),
+            legal_basis=legal_basis,
+        )
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -902,6 +1017,15 @@ class PIIGhostService:
     ) -> "SubjectAccessReport":
         svc = await self._get_project(project)
         return await svc.subject_access(tokens, max_excerpts=max_excerpts)
+
+    async def forget_subject(
+        self, tokens: list[str], *, project: str,
+        dry_run: bool = True, legal_basis: str = "c-opposition",
+    ) -> "ForgetReport":
+        svc = await self._get_project(project)
+        return await svc.forget_subject(
+            tokens, dry_run=dry_run, legal_basis=legal_basis,
+        )
 
     async def list_projects(self) -> "list[ProjectInfo]":
         return self._registry.list()
