@@ -99,3 +99,40 @@ def test_render_rejects_extra_keys_at_top_level(vault_dir, monkeypatch):
             output_path=str(output),
         ))
     asyncio.run(svc.close())
+
+
+def test_render_strips_nested_smuggled_keys(vault_dir, monkeypatch):
+    """A nested key smuggled into a sub-model (e.g. controller.__html_payload)
+    must NOT appear in the rendered MD.
+
+    The top-level extra='forbid' alone wouldn't catch this — Pydantic
+    sub-models default to extra='ignore', meaning a dict like
+    {"controller": {"name": "X", "__html_payload": "<script>..."}, ...}
+    would pass union validation. The fix is to render from the validated
+    model's model_dump() (which strips the unknown nested key) rather
+    than from the raw input dict.
+    """
+    pytest.importorskip("jinja2")
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("nested-smuggle"))
+    register = asyncio.run(svc.processing_register(project="nested-smuggle"))
+    poisoned = register.model_dump()
+    poisoned["controller"]["__html_payload"] = "<script>alert(1)</script>"
+    poisoned["documents_summary"]["__exfil"] = "SHOULD_NOT_APPEAR"
+
+    output = Path.home() / ".piighost" / "exports" / "nested.md"
+    asyncio.run(svc.render_compliance_doc(
+        data=poisoned, format="md", profile="generic",
+        output_path=str(output),
+    ))
+    rendered = output.read_text(encoding="utf-8")
+
+    assert "<script>alert(1)</script>" not in rendered, (
+        "Smuggled controller.__html_payload reached rendered output"
+    )
+    assert "SHOULD_NOT_APPEAR" not in rendered, (
+        "Smuggled documents_summary.__exfil reached rendered output"
+    )
+    assert "__html_payload" not in rendered
+    assert "__exfil" not in rendered
+    asyncio.run(svc.close())

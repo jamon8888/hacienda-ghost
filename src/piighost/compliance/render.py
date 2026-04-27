@@ -42,24 +42,31 @@ _COMPLIANCE_UNION_ADAPTER = TypeAdapter(
 )
 
 
-def _validate_compliance_dict(data: dict) -> None:
-    """Raise ValueError if *data* doesn't match any known compliance model.
+def _validate_compliance_dict(data: dict) -> dict:
+    """Validate *data* against the compliance union and return a sanitized dict.
 
-    Uses ``model_config.extra = "forbid"`` semantics through the union
-    adapter so unknown keys are rejected — closes the poisoned-dict
-    attack surface flagged in Phase 2 followup #3.
+    The returned dict is the ``model_dump()`` of the validated model — it
+    contains ONLY fields declared by the schema. Any extra keys passed in
+    by an attacker (top-level OR nested) are stripped here, which is
+    essential because templates render via ``**data`` and a smuggled key
+    like ``data["controller"]["__html_payload"]`` would otherwise survive
+    into Jinja's context.
+
+    Raises ValueError if *data* doesn't match any known compliance model.
+    Closes Phase 2 followup #3 (HTML injection vector) end-to-end.
     """
     if not isinstance(data, dict):
         raise ValueError(
             f"render_compliance_doc data must be a dict; got {type(data).__name__}"
         )
     try:
-        _COMPLIANCE_UNION_ADAPTER.validate_python(data)
+        validated = _COMPLIANCE_UNION_ADAPTER.validate_python(data)
     except ValidationError as exc:
         raise ValueError(
             "render_compliance_doc data does not match any known compliance "
             f"model (ProcessingRegister / DPIAScreening / SubjectAccessReport): {exc}"
         ) from exc
+    return validated.model_dump()
 
 # Doctype detection: which top-level keys identify which structured doc?
 _DOCTYPE_MARKERS = {
@@ -292,9 +299,12 @@ def render_compliance_doc(
         ``{path, format, size_bytes, rendered_at}`` — matches the shape
         of :class:`piighost.service.models.RenderResult`.
     """
-    # Validate data against the 3-way union BEFORE doing any I/O.
-    # This blocks adversarial input from a poisoned MCP context.
-    _validate_compliance_dict(data)
+    # Validate data against the 3-way union BEFORE doing any I/O. The
+    # returned dict is the model_dump of the validated model — strips any
+    # smuggled keys (top-level OR nested) from the dict that flows into
+    # Jinja's render context. This blocks adversarial input from a
+    # poisoned MCP context.
+    data = _validate_compliance_dict(data)
 
     if format not in ("md", "docx", "pdf"):
         raise ValueError(f"Unsupported format: {format!r}")
