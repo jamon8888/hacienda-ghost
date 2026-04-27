@@ -43,6 +43,35 @@ CREATE TABLE IF NOT EXISTS indexing_meta (
     version INTEGER NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS documents_meta (
+    project_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL,
+    doc_type TEXT NOT NULL DEFAULT 'autre',
+    doc_type_confidence REAL NOT NULL DEFAULT 0.0,
+    doc_date INTEGER,
+    doc_date_source TEXT NOT NULL DEFAULT 'none',
+    doc_title TEXT,
+    doc_subject TEXT,
+    doc_authors_json TEXT NOT NULL DEFAULT '[]',
+    doc_language TEXT,
+    doc_page_count INTEGER,
+    doc_format TEXT NOT NULL DEFAULT '',
+    is_encrypted_source INTEGER NOT NULL DEFAULT 0,
+    parties_json TEXT NOT NULL DEFAULT '[]',
+    dossier_id TEXT NOT NULL DEFAULT '',
+    extracted_at REAL NOT NULL,
+    PRIMARY KEY (project_id, doc_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_docmeta_dossier
+    ON documents_meta(project_id, dossier_id);
+CREATE INDEX IF NOT EXISTS idx_docmeta_doctype
+    ON documents_meta(project_id, doc_type);
+CREATE INDEX IF NOT EXISTS idx_docmeta_date
+    ON documents_meta(project_id, doc_date);
+CREATE INDEX IF NOT EXISTS idx_docmeta_language
+    ON documents_meta(project_id, doc_language);
 """
 
 
@@ -75,6 +104,29 @@ def _row_to_record(row: sqlite3.Row) -> FileRecord:
         error_message=row["error_message"],
         entity_count=row["entity_count"],
         chunk_count=row["chunk_count"],
+    )
+
+
+def _row_to_doc_meta(row: sqlite3.Row) -> "DocumentMetadata":
+    """Convert a documents_meta row to a DocumentMetadata."""
+    import json as _json
+    from piighost.service.models import DocumentMetadata
+    return DocumentMetadata(
+        doc_id=row["doc_id"],
+        doc_type=row["doc_type"],
+        doc_type_confidence=row["doc_type_confidence"],
+        doc_date=row["doc_date"],
+        doc_date_source=row["doc_date_source"],
+        doc_title=row["doc_title"],
+        doc_subject=row["doc_subject"],
+        doc_authors=_json.loads(row["doc_authors_json"] or "[]"),
+        doc_language=row["doc_language"],
+        doc_page_count=row["doc_page_count"],
+        doc_format=row["doc_format"],
+        is_encrypted_source=bool(row["is_encrypted_source"]),
+        parties=_json.loads(row["parties_json"] or "[]"),
+        dossier_id=row["dossier_id"],
+        extracted_at=row["extracted_at"],
     )
 
 
@@ -214,6 +266,95 @@ class IndexingStore:
         )
         row = cur.fetchone()
         return int(row["n"]) if row else 0
+
+    # ---- documents_meta CRUD ----
+
+    def upsert_document_meta(
+        self, project_id: str, meta: "DocumentMetadata",
+    ) -> None:
+        import json as _json
+        self._conn.execute(
+            """
+            INSERT INTO documents_meta (
+                project_id, doc_id, doc_type, doc_type_confidence,
+                doc_date, doc_date_source, doc_title, doc_subject,
+                doc_authors_json, doc_language, doc_page_count, doc_format,
+                is_encrypted_source, parties_json, dossier_id, extracted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(project_id, doc_id) DO UPDATE SET
+                doc_type = excluded.doc_type,
+                doc_type_confidence = excluded.doc_type_confidence,
+                doc_date = excluded.doc_date,
+                doc_date_source = excluded.doc_date_source,
+                doc_title = excluded.doc_title,
+                doc_subject = excluded.doc_subject,
+                doc_authors_json = excluded.doc_authors_json,
+                doc_language = excluded.doc_language,
+                doc_page_count = excluded.doc_page_count,
+                doc_format = excluded.doc_format,
+                is_encrypted_source = excluded.is_encrypted_source,
+                parties_json = excluded.parties_json,
+                dossier_id = excluded.dossier_id,
+                extracted_at = excluded.extracted_at
+            """,
+            (
+                project_id, meta.doc_id, meta.doc_type, meta.doc_type_confidence,
+                meta.doc_date, meta.doc_date_source, meta.doc_title, meta.doc_subject,
+                _json.dumps(meta.doc_authors), meta.doc_language, meta.doc_page_count,
+                meta.doc_format, int(meta.is_encrypted_source),
+                _json.dumps(meta.parties), meta.dossier_id, meta.extracted_at,
+            ),
+        )
+
+    def get_document_meta(
+        self, project_id: str, doc_id: str,
+    ) -> "DocumentMetadata | None":
+        cur = self._conn.execute(
+            "SELECT * FROM documents_meta WHERE project_id = ? AND doc_id = ?",
+            (project_id, doc_id),
+        )
+        row = cur.fetchone()
+        return _row_to_doc_meta(row) if row else None
+
+    def documents_meta_for(
+        self, project_id: str, doc_ids: list[str],
+    ) -> list["DocumentMetadata"]:
+        if not doc_ids:
+            return []
+        placeholders = ",".join("?" * len(doc_ids))
+        cur = self._conn.execute(
+            f"SELECT * FROM documents_meta "
+            f"WHERE project_id = ? AND doc_id IN ({placeholders})",
+            (project_id, *doc_ids),
+        )
+        return [_row_to_doc_meta(r) for r in cur.fetchall()]
+
+    def list_documents_meta(
+        self, project_id: str, *,
+        dossier_id: str | None = None, doc_type: str | None = None,
+        limit: int = 1000, offset: int = 0,
+    ) -> list["DocumentMetadata"]:
+        clauses = ["project_id = ?"]
+        params: list = [project_id]
+        if dossier_id is not None:
+            clauses.append("dossier_id = ?")
+            params.append(dossier_id)
+        if doc_type is not None:
+            clauses.append("doc_type = ?")
+            params.append(doc_type)
+        params.extend([limit, offset])
+        cur = self._conn.execute(
+            f"SELECT * FROM documents_meta WHERE {' AND '.join(clauses)} "
+            f"ORDER BY extracted_at DESC LIMIT ? OFFSET ?",
+            params,
+        )
+        return [_row_to_doc_meta(r) for r in cur.fetchall()]
+
+    def delete_document_meta(self, project_id: str, doc_id: str) -> None:
+        self._conn.execute(
+            "DELETE FROM documents_meta WHERE project_id = ? AND doc_id = ?",
+            (project_id, doc_id),
+        )
 
     @contextmanager
     def batch(self) -> Iterator[None]:
