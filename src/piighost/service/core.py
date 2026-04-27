@@ -1316,6 +1316,15 @@ class PIIGhostService:
         cp_svc.set(profile, scope=scope, project=project)  # type: ignore[arg-type]
         return {"ok": True, "scope": scope, "project": project or ""}
 
+    async def controller_profile_defaults(self, *, profession: str) -> dict:
+        """Return the bundled default profile for *profession*, or {} if unknown.
+
+        Read-only, never touches the user's controller.toml. Used by the
+        /hacienda:setup wizard to pre-fill answers.
+        """
+        from piighost.compliance.profile_loader import load_bundled_profile
+        return load_bundled_profile(profession)
+
     async def flush(self) -> None:
         for svc in self._cache.values():
             await svc.flush()
