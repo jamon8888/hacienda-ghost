@@ -216,7 +216,8 @@ TOOL_CATALOG: list[ToolSpec] = [
             "(avocat / notaire / medecin / expert_comptable / rh / generic). "
             "Used by /hacienda:setup to pre-fill finalites, bases_legales, "
             "duree_conservation, and ordinal_label. Returns {} for unknown "
-            "profession."
+            "profession or invalid input (rejects path traversal via strict "
+            "regex on profession)."
         ),
         timeout_s=2.0,
     ),

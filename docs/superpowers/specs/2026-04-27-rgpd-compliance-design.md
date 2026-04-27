@@ -615,6 +615,17 @@ src/piighost/compliance/profiles/
   medecin.toml  rh.toml  generic.toml
 ```
 
+### Erratum (Phase 5 hardening)
+
+The Phase 4 wizard implementation corrected the médecin ordinal label.
+Section "Wizard" listed `(barreau / chambre / OEC / ARS)` as the four
+ordinal types, but ARS is the *issuing authority*, not the registration
+number. The bundled `compliance/profiles/medecin.toml` correctly uses
+`Numéro RPPS / ADELI` per French regulatory practice (RPPS replaced
+ADELI for most professions). No code change needed — the original spec
+text remains as-is for historical accuracy; this erratum documents the
+intentional deviation.
+
 ## Tests
 
 ### Pyramide

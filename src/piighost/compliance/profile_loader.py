@@ -33,4 +33,10 @@ def load_bundled_profile(profession: str) -> dict:
             return {}
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, AttributeError, tomllib.TOMLDecodeError, OSError):
+        # AttributeError can fire when importlib.resources returns a
+        # MultiplexedPath (namespace-package case) without an .is_file()
+        # method — older Python layouts did this. We keep the catch for
+        # defence-in-depth even though our package layout uses __init__.py
+        # and a regular package, where .is_file() is always defined.
+        # Closes Phase 4 followup #8.
         return {}
