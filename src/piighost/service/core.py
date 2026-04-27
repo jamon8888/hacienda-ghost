@@ -820,6 +820,22 @@ class _ProjectService:
             legal_basis=legal_basis,
         )
 
+    # ---- RGPD Art. 30 ----
+
+    async def processing_register(self) -> "ProcessingRegister":
+        """Generate the Art. 30 register for this project."""
+        from piighost.compliance.processing_register import build_processing_register
+        from piighost.service.controller_profile import ControllerProfileService
+        cp_svc = ControllerProfileService(self._project_dir.parent.parent)
+        profile = cp_svc.get(scope="project", project=self._project_name)
+        return build_processing_register(
+            project_name=self._project_name,
+            vault=self._vault,
+            indexing_store=self._indexing_store,
+            audit=self._audit,
+            profile=profile,
+        )
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -1032,6 +1048,10 @@ class PIIGhostService:
         return await svc.forget_subject(
             tokens, dry_run=dry_run, legal_basis=legal_basis,
         )
+
+    async def processing_register(self, *, project: str) -> "ProcessingRegister":
+        svc = await self._get_project(project)
+        return await svc.processing_register()
 
     async def cluster_subjects(
         self, query: str, *, project: str,

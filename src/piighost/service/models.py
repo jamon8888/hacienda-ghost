@@ -226,3 +226,109 @@ class ForgetReport(BaseModel):
     actual_duration_ms: int | None = None
     completed_at: int | None = None
     legal_basis: str = ""
+
+
+# ---- RGPD Phase 2: Registre Art. 30 + DPIA ----
+
+
+class ControllerInfo(BaseModel):
+    """Identity of the data controller (cabinet / structure)."""
+    name: str = ""
+    profession: str = ""
+    bar_or_order_number: str = ""
+    address: str = ""
+    country: str = "FR"
+
+
+class DPOInfo(BaseModel):
+    """Designated Data Protection Officer."""
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+
+
+class DataCategoryItem(BaseModel):
+    """One row of the registre's 'categories of data' table."""
+    label: str
+    count: int
+    sensitive: bool = False
+
+
+class RetentionItem(BaseModel):
+    """One retention rule applied to a category of doc/data."""
+    category: str
+    duration: str
+
+
+class TransferItem(BaseModel):
+    """One identified transfer of data outside the EU."""
+    destination: str
+    recipient: str = ""
+    legal_mechanism: str = ""
+
+
+class SecurityMeasureItem(BaseModel):
+    """One technical/organisational security measure."""
+    name: str
+    auto_detected: bool = False
+
+
+class DocumentsSummary(BaseModel):
+    """Aggregate counts for the documents_meta inventory."""
+    total_docs: int = 0
+    by_doc_type: dict[str, int] = Field(default_factory=dict)
+    by_language: dict[str, int] = Field(default_factory=dict)
+    total_pages: int = 0
+
+
+class ManualFieldHint(BaseModel):
+    """A field the avocat must fill manually, with a hint."""
+    field: str
+    hint: str
+
+
+class ProcessingRegister(BaseModel):
+    """Art. 30 — registre des activités de traitement.
+
+    Auto-built from documents_meta + vault stats + audit log +
+    ControllerProfile. Fields the system can't infer are surfaced
+    via ``manual_fields`` so the avocat knows what to complete.
+    """
+    v: Literal[1] = 1
+    generated_at: int
+    project: str
+
+    # 1. Identité du responsable
+    controller: ControllerInfo = Field(default_factory=ControllerInfo)
+    dpo: DPOInfo | None = None
+
+    # 2. Description du traitement
+    processing_name: str = ""
+    processing_purposes: list[str] = Field(default_factory=list)
+    legal_bases: list[str] = Field(default_factory=list)
+
+    # 3. Catégories de personnes concernées (heuristique)
+    data_subject_categories: list[str] = Field(default_factory=list)
+
+    # 4. Catégories de données traitées
+    data_categories: list[DataCategoryItem] = Field(default_factory=list)
+    sensitive_categories_present: list[str] = Field(default_factory=list)
+
+    # 5. Destinataires
+    recipients_internal: list[str] = Field(default_factory=list)
+    recipients_external: list[str] = Field(default_factory=list)
+
+    # 6. Transferts hors UE
+    transfers_outside_eu: list[TransferItem] = Field(default_factory=list)
+
+    # 7. Durées de conservation
+    retention_periods: list[RetentionItem] = Field(default_factory=list)
+
+    # 8. Mesures de sécurité
+    security_measures: list[SecurityMeasureItem] = Field(default_factory=list)
+
+    # 9. Inventaire docs
+    documents_summary: DocumentsSummary = Field(default_factory=DocumentsSummary)
+
+    # 10. À compléter manuellement
+    manual_fields: list[ManualFieldHint] = Field(default_factory=list)
