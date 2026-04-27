@@ -164,3 +164,65 @@ class DocumentMetadata(BaseModel):
     parties: list[str] = Field(default_factory=list)
     dossier_id: str = ""
     extracted_at: int
+
+
+class SubjectDocumentRef(BaseModel):
+    """One document reference in a subject_access or forget report."""
+    doc_id: str
+    file_name: str
+    file_path: str
+    doc_type: str = "autre"
+    doc_date: int | None = None
+    occurrences: int = 0  # total times any cluster token appears in this doc
+    first_indexed: int | None = None
+    last_indexed: int | None = None
+
+
+class SubjectExcerpt(BaseModel):
+    """Redacted excerpt where the subject appears."""
+    doc_id: str
+    file_name: str
+    chunk_index: int
+    redacted_text: str  # cluster tokens replaced by <<SUBJECT>> for clarity
+    surrounding_tokens: list[str] = Field(default_factory=list)
+
+
+class SubjectAccessReport(BaseModel):
+    """Art. 15 right-of-access report.
+
+    Contains everything needed to produce the formal response to a
+    data-subject access request: who, what categories, where (docs),
+    how (purposes/legal bases), when (retention), with whom (recipients).
+    """
+    v: Literal[1] = 1
+    generated_at: int
+    project: str
+    subject_tokens: list[str]
+    subject_preview: list[str] = Field(default_factory=list)
+    categories_found: dict[str, int] = Field(default_factory=dict)
+    documents: list[SubjectDocumentRef] = Field(default_factory=list)
+    processing_purpose: str = ""
+    legal_basis: str = ""
+    retention_period: str = ""
+    third_party_recipients: list[str] = Field(default_factory=list)
+    transfers_outside_eu: list[str] = Field(default_factory=list)
+    excerpts: list[SubjectExcerpt] = Field(default_factory=list)
+    excerpts_truncated: bool = False
+    total_excerpts: int = 0
+
+
+class ForgetReport(BaseModel):
+    """Art. 17 right-to-be-forgotten outcome.
+
+    Tombstone semantics: token IDs are returned as hashes only — the
+    raw tokens are not persisted in the audit log either.
+    """
+    v: Literal[1] = 1
+    dry_run: bool
+    tokens_to_purge_hashes: list[str] = Field(default_factory=list)
+    chunks_to_rewrite: int = 0
+    docs_affected: list[str] = Field(default_factory=list)
+    estimated_duration_ms: int | None = None
+    actual_duration_ms: int | None = None
+    completed_at: int | None = None
+    legal_basis: str = ""
