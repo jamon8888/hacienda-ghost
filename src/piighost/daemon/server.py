@@ -314,4 +314,23 @@ async def _dispatch(
             caller_kind=params.get("caller_kind", "skill"),
             metadata=params.get("metadata"),
         )
+    if method == "cluster_subjects":
+        return await svc.cluster_subjects(
+            params["query"], project=params.get("project", "default"),
+        )
+    if method == "subject_access":
+        report = await svc.subject_access(
+            tokens=params["tokens"],
+            project=params.get("project", "default"),
+            max_excerpts=params.get("max_excerpts", 50),
+        )
+        return report.model_dump()
+    if method == "forget_subject":
+        report = await svc.forget_subject(
+            tokens=params["tokens"],
+            project=params.get("project", "default"),
+            dry_run=params.get("dry_run", True),
+            legal_basis=params.get("legal_basis", "c-opposition"),
+        )
+        return report.model_dump()
     raise ValueError("Unknown method")

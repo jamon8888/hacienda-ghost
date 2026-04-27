@@ -150,4 +150,39 @@ TOOL_CATALOG: list[ToolSpec] = [
         description="Append an event to a session's (=project's) audit log.",
         timeout_s=5.0,
     ),
+
+    # RGPD Phase 1 — Droits Art. 15 + Art. 17
+    ToolSpec(
+        name="cluster_subjects",
+        rpc_method="cluster_subjects",
+        description=(
+            "Find probable subject clusters for a free-text query "
+            "(person name, email, etc.). Returns groups of co-occurring "
+            "PII tokens — the avocat validates which cluster to apply "
+            "to subject_access or forget_subject."
+        ),
+        timeout_s=15.0,
+    ),
+    ToolSpec(
+        name="subject_access",
+        rpc_method="subject_access",
+        description=(
+            "Art. 15 right-of-access report. Returns all documents + "
+            "redacted excerpts where the subject (cluster of tokens) "
+            "appears, plus controller context (purpose, legal basis, "
+            "retention)."
+        ),
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="forget_subject",
+        rpc_method="forget_subject",
+        description=(
+            "Art. 17 right-to-be-forgotten with tombstone. dry_run=True "
+            "by default — preview the cascade. dry_run=False purges "
+            "vault entries and rewrites chunks with <<deleted:HASH>>; "
+            "audit event 'forgotten' carries token hashes only."
+        ),
+        timeout_s=120.0,  # re-embedding is the slowest path
+    ),
 ]

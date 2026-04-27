@@ -1027,6 +1027,20 @@ class PIIGhostService:
             tokens, dry_run=dry_run, legal_basis=legal_basis,
         )
 
+    async def cluster_subjects(
+        self, query: str, *, project: str,
+    ) -> list[dict]:
+        """Find probable subject clusters for a free-text query.
+
+        Returns dicts (not dataclasses) so the MCP layer doesn't need
+        a custom encoder. Each dict has the SubjectCluster fields.
+        """
+        from piighost.service.subject_clustering import cluster_subjects
+        from dataclasses import asdict
+        svc = await self._get_project(project)
+        clusters = cluster_subjects(svc._vault, query)
+        return [asdict(c) for c in clusters]
+
     async def list_projects(self) -> "list[ProjectInfo]":
         return self._registry.list()
 

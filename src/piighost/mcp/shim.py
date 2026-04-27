@@ -377,6 +377,45 @@ def _build_mcp(*, vault_dir) -> FastMCP:
             params={"folder": folder},
         )
 
+    # ------------------------------------------------------------------
+    # RGPD Phase 1 — Art. 15 + Art. 17
+    # ------------------------------------------------------------------
+
+    @mcp.tool(name="cluster_subjects",
+              description=by_name["cluster_subjects"].description)
+    async def cluster_subjects(query: str, project: str = "default") -> dict:
+        result = await _lazy_dispatch(
+            by_name["cluster_subjects"],
+            params={"query": query, "project": project},
+        )
+        # FastMCP requires dict outputs for structured content
+        if isinstance(result, list):
+            return {"clusters": result}
+        return result
+
+    @mcp.tool(name="subject_access",
+              description=by_name["subject_access"].description)
+    async def subject_access(
+        tokens: list[str], project: str = "default", max_excerpts: int = 50,
+    ) -> dict:
+        return await _lazy_dispatch(
+            by_name["subject_access"],
+            params={"tokens": tokens, "project": project,
+                    "max_excerpts": max_excerpts},
+        )
+
+    @mcp.tool(name="forget_subject",
+              description=by_name["forget_subject"].description)
+    async def forget_subject(
+        tokens: list[str], project: str = "default",
+        dry_run: bool = True, legal_basis: str = "c-opposition",
+    ) -> dict:
+        return await _lazy_dispatch(
+            by_name["forget_subject"],
+            params={"tokens": tokens, "project": project,
+                    "dry_run": dry_run, "legal_basis": legal_basis},
+        )
+
     return mcp
 
 
