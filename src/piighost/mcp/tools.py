@@ -208,4 +208,38 @@ TOOL_CATALOG: list[ToolSpec] = [
         ),
         timeout_s=5.0,
     ),
+
+    # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
+    ToolSpec(
+        name="processing_register",
+        rpc_method="processing_register",
+        description=(
+            "Generate the Art. 30 register for a project: controller, "
+            "DPO, data categories with Art. 9 sensitivity flag, document "
+            "inventory, retention, security measures. Auto-built from "
+            "documents_meta + vault.stats() + ControllerProfile."
+        ),
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="dpia_screening",
+        rpc_method="dpia_screening",
+        description=(
+            "DPIA-lite screening (Art. 35). Detects triggers, emits "
+            "verdict, prepares CNILPIAInputs for the official CNIL PIA "
+            "software. Does NOT generate a full DPIA — that's CNIL's tool."
+        ),
+        timeout_s=15.0,
+    ),
+    ToolSpec(
+        name="render_compliance_doc",
+        rpc_method="render_compliance_doc",
+        description=(
+            "Render a compliance dict (processing_register, dpia_screening, "
+            "subject_access_report) to MD/DOCX/PDF using profession-aware "
+            "Jinja2 templates. profile='avocat'|'notaire'|'medecin'|"
+            "'expert_comptable'|'rh'|'generic'."
+        ),
+        timeout_s=60.0,
+    ),
 ]

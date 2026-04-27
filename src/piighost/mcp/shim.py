@@ -445,6 +445,41 @@ def _build_mcp(*, vault_dir) -> FastMCP:
             },
         )
 
+    # ------------------------------------------------------------------
+    # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
+    # ------------------------------------------------------------------
+
+    @mcp.tool(name="processing_register",
+              description=by_name["processing_register"].description)
+    async def processing_register(project: str = "default") -> dict:
+        return await _lazy_dispatch(
+            by_name["processing_register"],
+            params={"project": project},
+        )
+
+    @mcp.tool(name="dpia_screening",
+              description=by_name["dpia_screening"].description)
+    async def dpia_screening(project: str = "default") -> dict:
+        return await _lazy_dispatch(
+            by_name["dpia_screening"],
+            params={"project": project},
+        )
+
+    @mcp.tool(name="render_compliance_doc",
+              description=by_name["render_compliance_doc"].description)
+    async def render_compliance_doc(
+        data: dict, format: str = "md",
+        profile: str = "generic", output_path: str = "",
+        project: str = "default",
+    ) -> dict:
+        return await _lazy_dispatch(
+            by_name["render_compliance_doc"],
+            params={
+                "data": data, "format": format, "profile": profile,
+                "output_path": output_path or None, "project": project,
+            },
+        )
+
     return mcp
 
 

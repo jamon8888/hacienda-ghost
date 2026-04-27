@@ -344,4 +344,23 @@ async def _dispatch(
             scope=params.get("scope", "global"),
             project=params.get("project") or None,
         )
+    if method == "processing_register":
+        report = await svc.processing_register(
+            project=params.get("project", "default"),
+        )
+        return report.model_dump()
+    if method == "dpia_screening":
+        report = await svc.dpia_screening(
+            project=params.get("project", "default"),
+        )
+        return report.model_dump()
+    if method == "render_compliance_doc":
+        result = await svc.render_compliance_doc(
+            data=params["data"],
+            format=params.get("format", "md"),
+            profile=params.get("profile", "generic"),
+            output_path=params.get("output_path") or None,
+            project=params.get("project", "default"),
+        )
+        return result.model_dump()
     raise ValueError("Unknown method")
