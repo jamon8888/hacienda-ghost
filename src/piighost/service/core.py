@@ -554,6 +554,151 @@ class _ProjectService:
             tier=tier.value,
         )
 
+    # ---- RGPD Art. 15 ----
+
+    async def subject_access(
+        self,
+        tokens: list[str],
+        *,
+        max_excerpts: int = 50,
+    ) -> "SubjectAccessReport":
+        """Right-of-access report (Art. 15).
+
+        Returns all documents/excerpts mentioning any of ``tokens``,
+        plus the audit context (purposes, legal basis, retention,
+        recipients) sourced from the controller profile.
+        """
+        from piighost.service.models import (
+            SubjectAccessReport, SubjectDocumentRef, SubjectExcerpt,
+        )
+        import time as _time
+        from pathlib import Path as _P
+
+        # 1. Find documents containing the cluster
+        doc_ids = self._vault.docs_containing_tokens(tokens)
+
+        # 2. Pull metadata for each doc (Phase 0 documents_meta)
+        docs_meta = self._indexing_store.documents_meta_for(
+            self._project_name, doc_ids,
+        )
+        meta_by_id = {m.doc_id: m for m in docs_meta}
+
+        # 3. Categorize tokens by label and build masked previews
+        categories: dict[str, int] = {}
+        previews: list[str] = []
+        for tok in tokens:
+            entry = self._vault.get_by_token(tok)
+            if entry is None:
+                continue
+            categories[entry.label] = categories.get(entry.label, 0) + 1
+            raw = entry.original or ""
+            if len(raw) <= 2:
+                masked = "**"
+            else:
+                masked = f"{raw[0]}{'*' * (len(raw) - 2)}{raw[-1]}"
+            previews.append(f"{masked} ({entry.label})")
+
+        # 4. Build doc refs from indexed_files + documents_meta
+        doc_refs: list[SubjectDocumentRef] = []
+        for doc_id in doc_ids:
+            meta = meta_by_id.get(doc_id)
+            file_record = self._vault.get_indexed_file(doc_id)
+            file_path = file_record.file_path if file_record else ""
+            file_name = _P(file_path).name if file_path else doc_id
+            occurrences = len([
+                e for e in self._vault.entities_for_doc(doc_id)
+                if e.token in tokens
+            ])
+            doc_refs.append(SubjectDocumentRef(
+                doc_id=doc_id,
+                file_name=file_name,
+                file_path=file_path,
+                doc_type=meta.doc_type if meta else "autre",
+                doc_date=meta.doc_date if meta else None,
+                occurrences=occurrences,
+                first_indexed=int(file_record.indexed_at) if file_record else None,
+                last_indexed=int(file_record.indexed_at) if file_record else None,
+            ))
+
+        # 5. Excerpts: chunks containing any token, with cluster tokens
+        # replaced by <<SUBJECT>> for clarity. Other PII placeholders
+        # (belonging to OTHER people) stay intact.
+        chunks = self._chunk_store.chunks_for_doc_ids(doc_ids)
+        excerpts: list[SubjectExcerpt] = []
+        for c in chunks:
+            text = c.get("chunk") or ""
+            if not any(t in text for t in tokens):
+                continue
+            redacted = text
+            for t in tokens:
+                redacted = redacted.replace(t, "<<SUBJECT>>")
+            file_path = c.get("file_path") or ""
+            file_name = _P(file_path).name if file_path else c.get("doc_id", "")
+            # chunk_id is "{doc_id}:{i}" — extract the index
+            chunk_id = c.get("chunk_id") or ""
+            try:
+                chunk_index = int(chunk_id.rsplit(":", 1)[-1]) if ":" in chunk_id else 0
+            except (ValueError, IndexError):
+                chunk_index = 0
+            excerpts.append(SubjectExcerpt(
+                doc_id=c.get("doc_id", ""),
+                file_name=file_name,
+                chunk_index=chunk_index,
+                redacted_text=redacted,
+                surrounding_tokens=[],  # Phase 1 v1: empty
+            ))
+
+        total_excerpts = len(excerpts)
+        truncated = total_excerpts > max_excerpts
+        excerpts = excerpts[:max_excerpts]
+
+        # 6. Controller context (best-effort — defaults if profile missing)
+        try:
+            from piighost.service.controller_profile import ControllerProfileService
+            vault_dir = self._project_dir.parent.parent
+            cp_svc = ControllerProfileService(vault_dir)
+            profile = cp_svc.get(scope="project", project=self._project_name)
+        except Exception:
+            profile = {}
+        defaults = profile.get("defaults", {}) if isinstance(profile, dict) else {}
+        purposes = defaults.get("finalites", []) or []
+        bases = defaults.get("bases_legales", []) or []
+        retention = defaults.get("duree_conservation_apres_fin_mission", "") or ""
+
+        report = SubjectAccessReport(
+            generated_at=int(_time.time()),
+            project=self._project_name,
+            subject_tokens=list(tokens),
+            subject_preview=previews,
+            categories_found=categories,
+            documents=doc_refs,
+            processing_purpose="; ".join(purposes) if purposes else "",
+            legal_basis="; ".join(bases) if bases else "",
+            retention_period=str(retention) if retention else "",
+            third_party_recipients=[],
+            transfers_outside_eu=[],
+            excerpts=excerpts,
+            excerpts_truncated=truncated,
+            total_excerpts=total_excerpts,
+        )
+
+        # 7. Audit (best-effort — failure must not block the report)
+        try:
+            self._audit.record_v2(
+                event_type="subject_access",
+                project_id=self._project_name,
+                subject_token=tokens[0] if tokens else None,
+                metadata={
+                    "cluster_size": len(tokens),
+                    "n_docs": len(doc_refs),
+                    "n_excerpts": total_excerpts,
+                },
+            )
+        except Exception:
+            pass
+
+        return report
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -751,6 +896,12 @@ class PIIGhostService:
     ):
         svc = await self._get_project(project)
         return await svc.vault_search(query, reveal=reveal, limit=limit)
+
+    async def subject_access(
+        self, tokens: list[str], *, project: str, max_excerpts: int = 50,
+    ) -> "SubjectAccessReport":
+        svc = await self._get_project(project)
+        return await svc.subject_access(tokens, max_excerpts=max_excerpts)
 
     async def list_projects(self) -> "list[ProjectInfo]":
         return self._registry.list()
