@@ -15,9 +15,18 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-__all__ = ["DaemonHandshake", "read_handshake", "write_handshake"]
+__all__ = [
+    "DaemonHandshake",
+    "StartingMarker",
+    "clear_starting_marker",
+    "read_handshake",
+    "read_starting_marker",
+    "write_handshake",
+    "write_starting_marker",
+]
 
 _HANDSHAKE_FILENAME = "daemon.json"
+_STARTING_FILENAME = "daemon.starting"
 
 
 @dataclass(frozen=True)
@@ -79,3 +88,70 @@ def read_handshake(vault_dir: Path) -> DaemonHandshake | None:
         return DaemonHandshake(**data)
     except TypeError:
         return None
+
+
+@dataclass(frozen=True)
+class StartingMarker:
+    """A short-lived marker file that says *"a daemon is mid-startup; don't
+    kill it as stale yet."*
+
+    Written by ``__main__.py`` before ``uvicorn.run()`` and cleared by the
+    lifespan once eager warm-up completes. Other shims that race past the
+    spawn lock (Windows lock files can be flaky under contention) check
+    this marker before declaring the existing daemon stale and killing
+    it.
+
+    Stored at ``<vault>/daemon.starting`` as JSON: ``{"pid": int, "started_at": int}``.
+    """
+
+    pid: int
+    started_at: int
+
+
+def _starting_path(vault_dir: Path) -> Path:
+    return vault_dir / _STARTING_FILENAME
+
+
+def write_starting_marker(vault_dir: Path, marker: StartingMarker) -> None:
+    """Atomically write ``marker`` to ``<vault_dir>/daemon.starting``."""
+    vault_dir.mkdir(parents=True, exist_ok=True)
+    target = _starting_path(vault_dir)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix="daemon.starting.", suffix=".tmp", dir=str(vault_dir)
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(asdict(marker)))
+        os.replace(tmp_path, target)
+    except BaseException:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def read_starting_marker(vault_dir: Path) -> StartingMarker | None:
+    """Read ``daemon.starting``; return ``None`` if missing or invalid."""
+    target = _starting_path(vault_dir)
+    try:
+        raw = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    try:
+        return StartingMarker(**data)
+    except TypeError:
+        return None
+
+
+def clear_starting_marker(vault_dir: Path) -> None:
+    """Remove the starting marker. No-op if it doesn't exist."""
+    try:
+        _starting_path(vault_dir).unlink()
+    except FileNotFoundError:
+        pass

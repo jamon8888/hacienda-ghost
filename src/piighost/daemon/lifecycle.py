@@ -13,9 +13,18 @@ import portalocker
 import psutil
 
 from piighost.daemon.exceptions import DaemonDisabled, DaemonStartTimeout
-from piighost.daemon.handshake import DaemonHandshake, read_handshake
+from piighost.daemon.handshake import (
+    DaemonHandshake,
+    read_handshake,
+    read_starting_marker,
+)
 
 _DISABLED_FILENAME = "daemon.disabled"
+
+# Maximum time we tolerate a daemon being in the "starting" state before
+# we give up waiting and treat its handshake as stale. Eager model warm-up
+# takes 60-90s on a cold cache; we add headroom for Windows + slow disks.
+_STARTUP_GRACE_SEC = 180.0
 
 
 def _disabled_path(vault_dir: Path) -> Path:
@@ -36,14 +45,46 @@ def _is_alive(hs: DaemonHandshake) -> bool:
         return False
 
 
-def _is_alive_with_retry(hs: DaemonHandshake, *, retries: int = 3, delay: float = 0.4) -> bool:
-    """Like _is_alive but retries on transient HTTP failures before declaring stale.
+def _is_starting(vault_dir: Path) -> bool:
+    """Return True iff a ``daemon.starting`` marker exists with a live pid.
+
+    The marker is written by the daemon entry-point before ``uvicorn.run()``
+    and cleared by the lifespan once eager model warm-up completes. While
+    it is present, ``/health`` is not yet responding (lifespan-startup
+    blocks the HTTP server) — but the daemon is alive and will become
+    responsive shortly. Other shims must not declare it stale.
+    """
+    marker = read_starting_marker(vault_dir)
+    if marker is None:
+        return False
+    if not psutil.pid_exists(marker.pid):
+        return False
+    # Refuse to wait forever on a stuck startup. If the marker is older
+    # than _STARTUP_GRACE_SEC, treat it as a crashed startup (the daemon
+    # presumably hung mid-warm) and let cleanup proceed.
+    age = time.time() - marker.started_at
+    return age <= _STARTUP_GRACE_SEC
+
+
+def _is_alive_with_retry(
+    hs: DaemonHandshake,
+    vault_dir: Path,
+    *,
+    retries: int = 3,
+    delay: float = 0.4,
+) -> bool:
+    """Like _is_alive but retries on transient HTTP failures, and treats
+    "starting" as alive (the daemon's HTTP server is mid-lifespan-startup
+    behind a 60-90s eager model warm).
 
     Prevents a second lock-holder from killing a live daemon whose port is
-    momentarily slow to respond (common on Windows under concurrent load).
+    momentarily slow to respond (common on Windows under concurrent load)
+    or whose port simply isn't bound yet because warm-up is still running.
     """
     for _ in range(retries):
         if _is_alive(hs):
+            return True
+        if _is_starting(vault_dir):
             return True
         time.sleep(delay)
     return False
@@ -69,7 +110,12 @@ def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 180.0) -> DaemonHands
     lock_path = vault_dir / "daemon.lock"
     with portalocker.Lock(str(lock_path), timeout=timeout_sec):
         hs = read_handshake(vault_dir)
-        if hs and _is_alive_with_retry(hs):
+        if hs and _is_alive_with_retry(hs, vault_dir):
+            # If the daemon is mid-startup, wait for it to finish before
+            # returning the handshake. Callers (CLI/MCP) need a daemon
+            # that's actually accepting requests, not one that's about
+            # to be.
+            _wait_for_startup(vault_dir, timeout_sec=timeout_sec)
             return hs
         if hs:
             _cleanup_stale(vault_dir, hs)
@@ -80,6 +126,14 @@ def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 180.0) -> DaemonHands
 
 
 def _cleanup_stale(vault_dir: Path, hs: DaemonHandshake) -> None:
+    """Kill the daemon advertised by ``hs`` and clear the handshake.
+
+    Refuses to kill if a ``daemon.starting`` marker exists with a live
+    pid — that means another shim is mid-spawn and we'd be sabotaging
+    its eager warm-up.
+    """
+    if _is_starting(vault_dir):
+        return
     if psutil.pid_exists(hs.pid):
         try:
             psutil.Process(hs.pid).terminate()
@@ -89,6 +143,24 @@ def _cleanup_stale(vault_dir: Path, hs: DaemonHandshake) -> None:
         (vault_dir / "daemon.json").unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def _wait_for_startup(vault_dir: Path, *, timeout_sec: float) -> None:
+    """Block until ``daemon.starting`` disappears (or its pid dies / it
+    ages out). No-op if the marker is already gone.
+
+    Returns silently in all cases — the caller is expected to follow up
+    with ``_is_alive`` if it cares whether the daemon is actually
+    serving. The point of this helper is to avoid returning a handshake
+    to a caller while the daemon is still loading models for 60-90s.
+    """
+    deadline = time.monotonic() + timeout_sec
+    delay = 0.1
+    while time.monotonic() < deadline:
+        if not _is_starting(vault_dir):
+            return
+        time.sleep(delay)
+        delay = min(delay * 1.5, 1.0)
 
 
 def _spawn(vault_dir: Path, *, timeout_sec: float) -> DaemonHandshake:

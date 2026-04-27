@@ -20,6 +20,7 @@ from starlette.routing import Route
 
 from piighost.daemon import reaper
 from piighost.daemon.audit_log import emit
+from piighost.daemon.handshake import clear_starting_marker
 from piighost.service import PIIGhostService
 from piighost.service.config import ServiceConfig
 
@@ -93,6 +94,13 @@ def build_app(vault_dir: Path) -> tuple[Starlette, str]:
             # and reports the error per-tool-call).
             pass
         state["service"] = svc
+        # Clear the "I'm starting up" marker now that eager warm has
+        # finished (or failed gracefully). Concurrent shims that race
+        # past the spawn lock can now use the regular /health probe to
+        # check liveness; before this point, /health was blocked
+        # behind lifespan-startup and other shims would have wrongly
+        # declared the daemon stale.
+        clear_starting_marker(vault_dir)
         try:
             yield
         finally:
