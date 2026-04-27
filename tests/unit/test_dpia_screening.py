@@ -93,8 +93,7 @@ def test_dpia_audit_event_written(vault_dir, monkeypatch):
     asyncio.run(svc.dpia_screening(project="dpia-audit"))
     from piighost.vault.audit import read_events
     audit_path = vault_dir / "projects" / "dpia-audit" / "audit.log"
-    if not audit_path.exists():
-        pytest.skip("audit path differs")
+    assert audit_path.exists(), f"expected audit log at {audit_path}"
     events = list(read_events(audit_path))
     types = [e.event_type for e in events]
     assert "dpia_screened" in types

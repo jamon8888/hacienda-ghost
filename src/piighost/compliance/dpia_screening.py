@@ -33,11 +33,11 @@ def screen_dpia(
     *,
     project_name: str,
     vault: "Vault",
-    indexing_store,
     audit: "AuditLogger",
-    profile: dict,
+    profile: dict | None,
 ) -> DPIAScreening:
     """Run the DPIA-lite screening and return the result."""
+    _profile = profile or {}
     stats = vault.stats()
     inventory = dict(stats.by_label or {})
     triggers: list[DPIATrigger] = []
@@ -96,7 +96,7 @@ def screen_dpia(
         ))
 
     # CNIL critère 9 — données salariés
-    profession = (profile or {}).get("controller", {}).get("profession", "")
+    profession = _profile.get("controller", {}).get("profession", "")
     if profession == "rh":
         triggers.append(DPIATrigger(
             code="cnil_9",
@@ -118,10 +118,10 @@ def screen_dpia(
         explanation = "Aucun trigger Art. 35.3 mandatory. DPIA non requise mais documentation conseillée."
 
     # CNIL PIA inputs
-    defaults = (profile or {}).get("defaults", {})
+    defaults = _profile.get("defaults", {})
     pia_inputs = CNILPIAInputs(
         processing_name=f"Dossier {project_name}",
-        processing_description=f"Traitement de données dans le cadre de l'activité du cabinet",
+        processing_description="Traitement de données dans le cadre de l'activité du cabinet",
         data_categories=sorted(inventory.keys()),
         data_subjects=["clients", "tiers contractants"]
             if profession != "rh" else ["salariés"],

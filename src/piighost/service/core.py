@@ -845,7 +845,6 @@ class _ProjectService:
         return screen_dpia(
             project_name=self._project_name,
             vault=self._vault,
-            indexing_store=self._indexing_store,
             audit=self._audit,
             profile=profile,
         )

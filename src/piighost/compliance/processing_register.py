@@ -39,11 +39,12 @@ def build_processing_register(
     vault: "Vault",
     indexing_store: "IndexingStore",
     audit: "AuditLogger",
-    profile: dict,
+    profile: dict | None,
 ) -> ProcessingRegister:
     """Compose all signals into a ProcessingRegister."""
+    _profile = profile or {}
     # 1. Identity
-    ctrl_dict = profile.get("controller", {}) if isinstance(profile, dict) else {}
+    ctrl_dict = _profile.get("controller", {})
     controller = ControllerInfo(
         name=ctrl_dict.get("name", ""),
         profession=ctrl_dict.get("profession", ""),
@@ -51,7 +52,7 @@ def build_processing_register(
         address=ctrl_dict.get("address", ""),
         country=ctrl_dict.get("country", "FR"),
     )
-    dpo_dict = profile.get("dpo", {}) if isinstance(profile, dict) else {}
+    dpo_dict = _profile.get("dpo", {})
     dpo = None
     if dpo_dict.get("name") or dpo_dict.get("email"):
         dpo = DPOInfo(
@@ -60,7 +61,7 @@ def build_processing_register(
             phone=dpo_dict.get("phone", ""),
         )
 
-    defaults = profile.get("defaults", {}) if isinstance(profile, dict) else {}
+    defaults = _profile.get("defaults", {})
 
     # 2. Vault inventory
     stats = vault.stats()
