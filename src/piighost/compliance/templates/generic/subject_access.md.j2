@@ -1,0 +1,90 @@
+# Réponse à une demande d'accès (Art. 15 RGPD)
+
+**Projet :** {{ project }}
+**Généré le :** {{ generated_at }}
+**Version :** {{ v }}
+
+---
+
+## Personne concernée
+
+{% if subject_preview -%}
+**Identifiants :** {{ subject_preview | join(", ") }}
+{%- else -%}
+_Identifiant masqué._
+{%- endif %}
+
+## Catégories de données détenues
+
+{% if categories_found -%}
+| Catégorie | Volume |
+|-----------|--------|
+{% for cat, n in categories_found.items() -%}
+| {{ cat }} | {{ n }} |
+{% endfor %}
+{%- else -%}
+_Aucune donnée trouvée._
+{%- endif %}
+
+## Documents concernés
+
+{% if documents -%}
+| Document | Type | Date | Occurrences |
+|----------|------|------|-------------|
+{% for d in documents -%}
+| {{ d.file_name }} | {{ d.doc_type }} | {{ d.doc_date or "—" }} | {{ d.occurrences }} |
+{% endfor %}
+{%- else -%}
+_Aucun document._
+{%- endif %}
+
+## Finalité du traitement
+
+{{ processing_purpose or "_à compléter_" }}
+
+## Base légale
+
+{{ legal_basis or "_à compléter_" }}
+
+## Durée de conservation
+
+{{ retention_period or "_à compléter_" }}
+
+## Destinataires tiers
+
+{% if third_party_recipients -%}
+{% for r in third_party_recipients -%}
+- {{ r }}
+{% endfor %}
+{%- else -%}
+_Aucun._
+{%- endif %}
+
+## Transferts hors UE
+
+{% if transfers_outside_eu -%}
+{% for t in transfers_outside_eu -%}
+- {{ t }}
+{% endfor %}
+{%- else -%}
+_Aucun._
+{%- endif %}
+
+{% if excerpts -%}
+## Extraits caviardés
+
+{% for e in excerpts -%}
+### {{ e.file_name }} (chunk {{ e.chunk_index }})
+
+> {{ e.redacted_text }}
+
+{% endfor %}
+
+{% if excerpts_truncated -%}
+_(Liste tronquée — {{ total_excerpts }} extraits au total.)_
+{%- endif %}
+{%- endif %}
+
+---
+
+*Document généré par piighost. À relire avant transmission au demandeur.*

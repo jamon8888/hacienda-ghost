@@ -366,3 +366,11 @@ class DPIAScreening(BaseModel):
     verdict_explanation: str = ""
     cnil_pia_inputs: CNILPIAInputs = Field(default_factory=CNILPIAInputs)
     cnil_pia_url: str = "https://www.cnil.fr/fr/outil-pia-telechargez-et-installez-le-logiciel-de-la-cnil"
+
+
+class RenderResult(BaseModel):
+    """Outcome of rendering a structured compliance doc to MD/DOCX/PDF."""
+    path: str
+    format: Literal["md", "docx", "pdf"]
+    size_bytes: int = 0
+    rendered_at: int

@@ -1,0 +1,158 @@
+# Registre des activités de traitement (Art. 30 RGPD)
+
+**Projet :** {{ project }}
+**Généré le :** {{ generated_at }}
+**Version :** {{ v }}
+
+---
+
+## 1. Identité du responsable de traitement
+
+- **Nom / Cabinet :** {{ controller.name or "_à compléter_" }}
+- **Profession :** {{ controller.profession or "_à compléter_" }}
+{%- if controller.bar_or_order_number %}
+- **N° barreau / ordre :** {{ controller.bar_or_order_number }}
+{%- endif %}
+{%- if controller.address %}
+- **Adresse :** {{ controller.address }}
+{%- endif %}
+- **Pays :** {{ controller.country }}
+
+{% if dpo -%}
+### Délégué à la protection des données (DPO)
+
+- **Nom :** {{ dpo.name or "_non désigné_" }}
+{%- if dpo.email %}
+- **Email :** {{ dpo.email }}
+{%- endif %}
+{%- if dpo.phone %}
+- **Téléphone :** {{ dpo.phone }}
+{%- endif %}
+{%- endif %}
+
+## 2. Description du traitement
+
+- **Nom du traitement :** {{ processing_name or "_à compléter_" }}
+
+### Finalités
+
+{% if processing_purposes -%}
+{% for p in processing_purposes -%}
+- {{ p }}
+{% endfor %}
+{%- else -%}
+_À compléter._
+{%- endif %}
+
+### Bases légales (Art. 6)
+
+{% if legal_bases -%}
+{% for b in legal_bases -%}
+- {{ b }}
+{% endfor %}
+{%- else -%}
+_À compléter._
+{%- endif %}
+
+## 3. Catégories de personnes concernées
+
+{% if data_subject_categories -%}
+{% for c in data_subject_categories -%}
+- {{ c }}
+{% endfor %}
+{%- else -%}
+_À compléter._
+{%- endif %}
+
+## 4. Catégories de données traitées
+
+| Catégorie | Volume | Sensible (Art. 9) |
+|-----------|--------|-------------------|
+{% for d in data_categories -%}
+| {{ d.label }} | {{ d.count }} | {{ "Oui" if d.sensitive else "Non" }} |
+{% endfor %}
+
+{% if sensitive_categories_present -%}
+**Catégories sensibles présentes :** {{ sensitive_categories_present | join(", ") }}
+{%- endif %}
+
+## 5. Destinataires
+
+### Internes
+
+{% if recipients_internal -%}
+{% for r in recipients_internal -%}
+- {{ r }}
+{% endfor %}
+{%- else -%}
+_Aucun renseigné._
+{%- endif %}
+
+### Externes
+
+{% if recipients_external -%}
+{% for r in recipients_external -%}
+- {{ r }}
+{% endfor %}
+{%- else -%}
+_Aucun renseigné._
+{%- endif %}
+
+## 6. Transferts hors Union européenne
+
+{% if transfers_outside_eu -%}
+| Destination | Destinataire | Mécanisme légal |
+|-------------|--------------|-----------------|
+{% for t in transfers_outside_eu -%}
+| {{ t.destination }} | {{ t.recipient }} | {{ t.legal_mechanism }} |
+{% endfor %}
+{%- else -%}
+_Aucun transfert hors UE déclaré._
+{%- endif %}
+
+## 7. Durées de conservation
+
+{% if retention_periods -%}
+| Catégorie | Durée |
+|-----------|-------|
+{% for r in retention_periods -%}
+| {{ r.category }} | {{ r.duration }} |
+{% endfor %}
+{%- else -%}
+_À compléter._
+{%- endif %}
+
+## 8. Mesures de sécurité
+
+{% if security_measures -%}
+{% for m in security_measures -%}
+- {{ m.name }}{% if m.auto_detected %} _(détecté automatiquement)_{% endif %}
+{% endfor %}
+{%- else -%}
+_À compléter._
+{%- endif %}
+
+## 9. Inventaire documentaire
+
+- **Total documents :** {{ documents_summary.total_docs }}
+- **Total pages :** {{ documents_summary.total_pages }}
+
+{% if documents_summary.by_doc_type -%}
+### Répartition par type
+
+{% for t, n in documents_summary.by_doc_type.items() -%}
+- {{ t }} : {{ n }}
+{% endfor %}
+{%- endif %}
+
+{% if manual_fields -%}
+## 10. Champs à compléter manuellement
+
+{% for f in manual_fields -%}
+- **{{ f.field }} :** {{ f.hint }}
+{% endfor %}
+{%- endif %}
+
+---
+
+*Document généré automatiquement par piighost. À relire et compléter avant publication officielle.*

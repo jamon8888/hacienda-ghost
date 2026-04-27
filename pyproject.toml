@@ -113,6 +113,13 @@ proxy = [
 forward = [
     'mitmproxy>=11.0.0,<12; python_version >= "3.12"',
 ]
+compliance = [
+    "Jinja2>=3.1",
+    "markdown>=3.5",
+    # Heavier optional deps:
+    # "docxtpl>=0.16",  # uncomment when DOCX output is needed
+    # "weasyprint>=62",  # uncomment when PDF output is needed
+]
 all = [
     "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy,forward]",
 ]

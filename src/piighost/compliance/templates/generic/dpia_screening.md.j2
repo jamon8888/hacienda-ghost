@@ -1,0 +1,86 @@
+# Analyse d'impact relative à la protection des données (DPIA-lite)
+
+**Projet :** {{ project }}
+**Généré le :** {{ generated_at }}
+**Version :** {{ v }}
+
+---
+
+## Verdict
+
+**{{ verdict }}**
+
+{% if verdict_explanation -%}
+{{ verdict_explanation }}
+{%- endif %}
+
+## Inventaire des données
+
+{% if data_inventory -%}
+| Catégorie | Volume |
+|-----------|--------|
+{% for cat, n in data_inventory.items() -%}
+| {{ cat }} | {{ n }} |
+{% endfor %}
+{%- else -%}
+_Aucune donnée détectée pour ce projet._
+{%- endif %}
+
+## Critères CNIL/Art. 35.3 déclenchés
+
+{% if triggers -%}
+{% for t in triggers -%}
+### {{ t.code }} — {{ t.name }}
+
+- **Sévérité :** {{ t.severity }}
+{% if t.matched_evidence -%}
+- **Indices détectés :**
+{% for e in t.matched_evidence -%}
+  - {{ e }}
+{% endfor %}
+{%- endif %}
+
+{% endfor %}
+{%- else -%}
+_Aucun critère déclenché._
+{%- endif %}
+
+{% if verdict != "dpia_not_required" -%}
+## DPIA recommandée — utiliser l'outil officiel CNIL
+
+L'analyse d'impact complète doit être conduite avec le logiciel PIA de la CNIL.
+
+### Pré-remplissage suggéré
+
+- **Nom du traitement :** {{ cnil_pia_inputs.processing_name or "_à compléter_" }}
+{%- if cnil_pia_inputs.processing_description %}
+- **Description :** {{ cnil_pia_inputs.processing_description }}
+{%- endif %}
+{%- if cnil_pia_inputs.purposes %}
+- **Finalités :** {{ cnil_pia_inputs.purposes | join(", ") }}
+{%- endif %}
+{%- if cnil_pia_inputs.legal_bases %}
+- **Bases légales :** {{ cnil_pia_inputs.legal_bases | join(", ") }}
+{%- endif %}
+{%- if cnil_pia_inputs.data_categories %}
+- **Catégories de données :** {{ cnil_pia_inputs.data_categories | join(", ") }}
+{%- endif %}
+{%- if cnil_pia_inputs.data_subjects %}
+- **Personnes concernées :** {{ cnil_pia_inputs.data_subjects | join(", ") }}
+{%- endif %}
+{%- if cnil_pia_inputs.retention %}
+- **Durée de conservation :** {{ cnil_pia_inputs.retention }}
+{%- endif %}
+{%- if cnil_pia_inputs.recipients %}
+- **Destinataires :** {{ cnil_pia_inputs.recipients | join(", ") }}
+{%- endif %}
+{%- if cnil_pia_inputs.security_measures %}
+- **Mesures de sécurité :** {{ cnil_pia_inputs.security_measures | join(", ") }}
+{%- endif %}
+
+**Outil officiel CNIL :** {{ cnil_pia_url }}
+{%- endif %}
+
+---
+
+*Document généré par piighost (DPIA-lite). Pour la DPIA complète, utiliser l'outil officiel CNIL : {{ cnil_pia_url }}*

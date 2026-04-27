@@ -849,6 +849,18 @@ class _ProjectService:
             profile=profile,
         )
 
+    async def render_compliance_doc(
+        self, *, data: dict, format: str = "md",
+        profile: str = "generic", output_path: str | None = None,
+    ) -> "RenderResult":
+        """Render a compliance doc (registre / DPIA / subject access) to disk."""
+        from piighost.compliance.render import render_compliance_doc
+        from piighost.service.models import RenderResult
+        result = render_compliance_doc(
+            data=data, format=format, profile=profile, output_path=output_path,  # type: ignore[arg-type]
+        )
+        return RenderResult(**result)
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -1069,6 +1081,16 @@ class PIIGhostService:
     async def dpia_screening(self, *, project: str) -> "DPIAScreening":
         svc = await self._get_project(project)
         return await svc.dpia_screening()
+
+    async def render_compliance_doc(
+        self, *, data: dict, format: str = "md",
+        profile: str = "generic", output_path: str | None = None,
+        project: str = "default",
+    ) -> "RenderResult":
+        svc = await self._get_project(project)
+        return await svc.render_compliance_doc(
+            data=data, format=format, profile=profile, output_path=output_path,
+        )
 
     async def cluster_subjects(
         self, query: str, *, project: str,
