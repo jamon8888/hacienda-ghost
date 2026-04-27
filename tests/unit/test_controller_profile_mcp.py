@@ -10,7 +10,16 @@ from piighost.service.config import ServiceConfig, RerankerSection
 
 
 @pytest.fixture()
-def vault_dir(tmp_path):
+def vault_dir(tmp_path, monkeypatch):
+    # Redirect Path.home() / HOME / USERPROFILE to a tmp dir so the
+    # ControllerProfileService writes to a sandbox instead of the
+    # developer's real ~/.piighost/. Without this, a stale global
+    # profile from a previous test run leaks into the test.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: home)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     return tmp_path / "vault"
 
 

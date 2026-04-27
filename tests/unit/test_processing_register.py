@@ -10,7 +10,15 @@ from piighost.service.core import PIIGhostService
 
 
 @pytest.fixture()
-def vault_dir(tmp_path):
+def vault_dir(tmp_path, monkeypatch):
+    # Redirect Path.home() / HOME / USERPROFILE so the global
+    # ControllerProfileService writes to a sandbox instead of the
+    # developer's real ~/.piighost/.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", lambda: home)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     return tmp_path / "vault"
 
 
