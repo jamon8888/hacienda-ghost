@@ -1,0 +1,33 @@
+# Default profile for offices notariaux (France).
+# Source: Conseil Supérieur du Notariat / Décret 71-941 / Art. 1316-2 Code civil.
+
+[controller]
+profession = "notaire"
+country = "FR"
+ordinal_label = "Numéro de chambre départementale (CSN)"
+
+[dpo]
+required_hint = "souvent obligatoire — patrimoines, identités, généalogie sur grande échelle"
+
+[defaults]
+finalites = [
+    "Authentification d'actes (immobilier, succession, contrat de mariage)",
+    "Conseil patrimonial et fiscal",
+    "Conservation des minutes (obligation légale)",
+    "Facturation et comptabilité",
+]
+bases_legales = [
+    "obligation_legale",
+    "execution_contrat",
+]
+duree_conservation_apres_fin_mission = "75 ans (minutes) — 10 ans (pièces comptables) — 5 ans (correspondance)"
+mentions_legales_url = "https://www.notaires.fr/"
+
+[suggested_security_measures]
+items = [
+    "Chiffrement au repos",
+    "Détection PII locale",
+    "Conservation des minutes en coffre numérique notarial (Minutier Central Électronique)",
+    "Authentification renforcée poste de travail",
+    "Sauvegarde chiffrée hors-site",
+]

@@ -1,0 +1,33 @@
+# Default profile for cabinets d'expertise comptable (France).
+# Source: Ordre des Experts-Comptables (OEC) / Code de déontologie 2012.
+
+[controller]
+profession = "expert_comptable"
+country = "FR"
+ordinal_label = "Numéro d'inscription au tableau de l'OEC"
+
+[dpo]
+required_hint = "souvent recommandé — traitement à grande échelle de données sociales et fiscales"
+
+[defaults]
+finalites = [
+    "Tenue de comptabilité et déclarations fiscales",
+    "Audit légal et révision des comptes",
+    "Conseil en gestion sociale (paie, déclarations sociales)",
+    "Facturation et secret professionnel comptable",
+]
+bases_legales = [
+    "execution_contrat",
+    "obligation_legale",
+]
+duree_conservation_apres_fin_mission = "10 ans (pièces comptables Art. L123-22 Code de commerce) — 6 ans (pièces fiscales L102B LPF)"
+mentions_legales_url = "https://www.experts-comptables.fr/"
+
+[suggested_security_measures]
+items = [
+    "Chiffrement au repos",
+    "Détection PII locale",
+    "Cloisonnement par client",
+    "Authentification renforcée",
+    "Sauvegarde chiffrée hors-site",
+]

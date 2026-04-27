@@ -1,0 +1,33 @@
+# Default profile for cabinets d'avocats (France).
+# Loaded by the /hacienda:setup wizard when profession="avocat".
+# Source: CNB / loi du 31 décembre 1971 (Art. 66-5) / RIN.
+
+[controller]
+profession = "avocat"
+country = "FR"
+ordinal_label = "Numéro de barreau (CNB)"
+
+[dpo]
+required_hint = "obligatoire si traitement à grande échelle de données sensibles ou si autorité publique"
+
+[defaults]
+finalites = [
+    "Conseil et représentation juridique",
+    "Gestion du dossier client (secret professionnel Art. 66-5)",
+    "Facturation et comptabilité",
+]
+bases_legales = [
+    "execution_contrat",
+    "obligation_legale",
+]
+duree_conservation_apres_fin_mission = "5 ans (prescription civile Art. 2224 Code civil) — 10 ans pour pièces comptables"
+mentions_legales_url = "https://www.cnb.avocat.fr/"
+
+[suggested_security_measures]
+items = [
+    "Chiffrement au repos (vault piighost SQLite + LanceDB)",
+    "Détection PII locale (pas de transfert vers cloud externe pour inférence)",
+    "Cloisonnement par dossier (un projet piighost par client)",
+    "Authentification renforcée poste de travail",
+    "Sauvegarde chiffrée hors-site",
+]

@@ -1,0 +1,28 @@
+# Catch-all default profile for users who don't match a specific profession.
+# Loaded when profession="generic" or unknown.
+
+[controller]
+profession = "generic"
+country = "FR"
+ordinal_label = ""
+
+[dpo]
+required_hint = "à évaluer selon Art. 37 RGPD (autorité publique / surveillance systématique / Art. 9-10 à grande échelle)"
+
+[defaults]
+finalites = [
+    "Gestion du dossier client",
+    "Facturation",
+]
+bases_legales = [
+    "execution_contrat",
+]
+duree_conservation_apres_fin_mission = "À déterminer selon la nature du traitement (Art. 5.1.e RGPD — limitation de la conservation)"
+mentions_legales_url = ""
+
+[suggested_security_measures]
+items = [
+    "Chiffrement au repos",
+    "Détection PII locale",
+    "Authentification renforcée",
+]

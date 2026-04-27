@@ -1,0 +1,34 @@
+# Default profile for services Ressources Humaines (France).
+# Source: Code du travail / CNIL "Pack RH".
+
+[controller]
+profession = "rh"
+country = "FR"
+ordinal_label = ""  # RH = service interne, pas d'inscription ordinale
+
+[dpo]
+required_hint = "obligatoire au-delà de 250 salariés ou si profilage / décisions automatisées"
+
+[defaults]
+finalites = [
+    "Gestion administrative du personnel",
+    "Paie et déclarations sociales",
+    "Recrutement",
+    "Évaluation et formation",
+]
+bases_legales = [
+    "execution_contrat",
+    "obligation_legale",
+]
+duree_conservation_apres_fin_mission = "5 ans après départ (dossier) — 5 ans (paie L3243-4) — 2 ans (recrutement non retenu) — 5 ans (CV reçus avec consentement)"
+mentions_legales_url = "https://www.cnil.fr/fr/la-gestion-des-ressources-humaines"
+
+[suggested_security_measures]
+items = [
+    "Chiffrement au repos",
+    "Détection PII locale",
+    "Cloisonnement par salarié",
+    "Authentification renforcée",
+    "Habilitations strictes (RH ≠ manager ≠ paie)",
+    "Audit log immuable",
+]

@@ -1,0 +1,34 @@
+# Default profile for cabinets médicaux (France).
+# Source: Code de la santé publique (Art. R4127) / Conseil de l'Ordre / HDS.
+
+[controller]
+profession = "medecin"
+country = "FR"
+ordinal_label = "Numéro RPPS / ADELI"
+
+[dpo]
+required_hint = "obligatoire — données de santé Art. 9 traitées systématiquement"
+
+[defaults]
+finalites = [
+    "Tenue du dossier médical patient (Art. R1112-2 CSP)",
+    "Facturation et téléconsultation",
+    "Suivi médical et continuité des soins",
+]
+bases_legales = [
+    "consentement_explicite",
+    "interet_vital",
+    "mission_interet_public_sante",
+]
+duree_conservation_apres_fin_mission = "20 ans après dernier passage (Art. R1112-7 CSP) — 10 ans après le décès"
+mentions_legales_url = "https://www.conseil-national.medecin.fr/"
+
+[suggested_security_measures]
+items = [
+    "Hébergement HDS (Hébergeur de Données de Santé) certifié",
+    "Chiffrement au repos + en transit",
+    "Authentification forte (CPS / e-CPS)",
+    "Détection PII locale (aucun transfert hors UE)",
+    "Cloisonnement par patient",
+    "Audit log immuable",
+]
