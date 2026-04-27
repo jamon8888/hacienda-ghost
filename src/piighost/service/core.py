@@ -836,6 +836,20 @@ class _ProjectService:
             profile=profile,
         )
 
+    async def dpia_screening(self) -> "DPIAScreening":
+        """Run DPIA-lite screening for this project."""
+        from piighost.compliance.dpia_screening import screen_dpia
+        from piighost.service.controller_profile import ControllerProfileService
+        cp_svc = ControllerProfileService(self._project_dir.parent.parent)
+        profile = cp_svc.get(scope="project", project=self._project_name)
+        return screen_dpia(
+            project_name=self._project_name,
+            vault=self._vault,
+            indexing_store=self._indexing_store,
+            audit=self._audit,
+            profile=profile,
+        )
+
     # ---- lifecycle ----
 
     async def flush(self) -> None:
@@ -1052,6 +1066,10 @@ class PIIGhostService:
     async def processing_register(self, *, project: str) -> "ProcessingRegister":
         svc = await self._get_project(project)
         return await svc.processing_register()
+
+    async def dpia_screening(self, *, project: str) -> "DPIAScreening":
+        svc = await self._get_project(project)
+        return await svc.dpia_screening()
 
     async def cluster_subjects(
         self, query: str, *, project: str,

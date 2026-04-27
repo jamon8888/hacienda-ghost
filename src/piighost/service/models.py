@@ -332,3 +332,37 @@ class ProcessingRegister(BaseModel):
 
     # 10. À compléter manuellement
     manual_fields: list[ManualFieldHint] = Field(default_factory=list)
+
+
+class DPIATrigger(BaseModel):
+    """One Art. 35.3 or CNIL trigger detected for this project."""
+    code: str
+    name: str
+    matched_evidence: list[str] = Field(default_factory=list)
+    severity: Literal["mandatory", "high", "medium", "low"]
+
+
+class CNILPIAInputs(BaseModel):
+    """Pre-filled inputs for the official CNIL PIA software."""
+    processing_name: str = ""
+    processing_description: str = ""
+    data_categories: list[str] = Field(default_factory=list)
+    data_subjects: list[str] = Field(default_factory=list)
+    purposes: list[str] = Field(default_factory=list)
+    legal_bases: list[str] = Field(default_factory=list)
+    retention: str = ""
+    recipients: list[str] = Field(default_factory=list)
+    security_measures: list[str] = Field(default_factory=list)
+
+
+class DPIAScreening(BaseModel):
+    """DPIA-lite screening — does this project require a full DPIA?"""
+    v: Literal[1] = 1
+    generated_at: int
+    project: str
+    data_inventory: dict[str, int] = Field(default_factory=dict)
+    triggers: list[DPIATrigger] = Field(default_factory=list)
+    verdict: Literal["dpia_required", "dpia_recommended", "dpia_not_required"]
+    verdict_explanation: str = ""
+    cnil_pia_inputs: CNILPIAInputs = Field(default_factory=CNILPIAInputs)
+    cnil_pia_url: str = "https://www.cnil.fr/fr/outil-pia-telechargez-et-installez-le-logiciel-de-la-cnil"
