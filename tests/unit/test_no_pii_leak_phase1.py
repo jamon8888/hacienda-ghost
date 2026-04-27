@@ -78,16 +78,25 @@ def test_subject_access_report_no_raw_pii(vault_dir, monkeypatch):
 
 
 def test_subject_access_preview_uses_masking(vault_dir, monkeypatch):
-    """subject_preview entries must be masked (first + last char + asterisks)."""
+    """subject_preview entries must use the opaque <<SUBJECT>> placeholder.
+
+    Phase 5 followup #4 replaced the old ``J*e``-style character mask
+    (which leaked first/last char for short originals) with the constant
+    ``<<SUBJECT>>`` token. Each preview entry must therefore contain that
+    placeholder and the label name — and must NOT contain the character
+    of any seeded raw PII.
+    """
     svc = _svc(vault_dir, monkeypatch)
     asyncio.run(svc.create_project("leak-mask"))
     proj = asyncio.run(svc._get_project("leak-mask"))
     tokens = _seed_known_pii(proj)
 
     report = asyncio.run(svc.subject_access(tokens=tokens, project="leak-mask"))
-    # Each preview entry should contain '*' (masking) and the label name
+    # Each preview entry should contain the opaque placeholder and the label.
     for preview in report.subject_preview:
-        assert "*" in preview, f"Preview not masked: {preview!r}"
+        assert "<<SUBJECT>>" in preview, (
+            f"Preview not using <<SUBJECT>> placeholder: {preview!r}"
+        )
     asyncio.run(svc.close())
 
 

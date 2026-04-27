@@ -18,7 +18,9 @@ def test_vault_search_finds_entity(svc_with_entities):
     results = asyncio.run(svc.vault_search("Alice"))
     assert len(results) >= 1
     masked = [r.original_masked for r in results]
-    assert any("A***e" in (m or "") for m in masked)
+    # Phase 5 followup #4: _mask now emits the opaque <<SUBJECT>> placeholder
+    # instead of the partial-leak ``A***e`` shape.
+    assert any("<<SUBJECT>>" == m for m in masked)
     asyncio.run(svc.close())
 
 

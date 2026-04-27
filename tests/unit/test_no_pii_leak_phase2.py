@@ -106,3 +106,45 @@ def test_rendered_md_no_raw_pii(vault_dir, monkeypatch):
             f"Raw PII '{raw}' leaked in rendered MD output"
         )
     asyncio.run(svc.close())
+
+
+def test_rendered_subject_access_no_raw_pii(vault_dir, monkeypatch):
+    """SubjectAccessReport rendered through render_compliance_doc must
+    not leak raw PII via subject_preview / _mask partial-mask path.
+
+    Closes Phase 2 followup #4 (the J*e-style partial-leak).
+    """
+    pytest.importorskip("jinja2")
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("leak-sa"))
+    proj = asyncio.run(svc._get_project("leak-sa"))
+
+    # Seed a subject with a 3-character original that the old _mask would
+    # have leaked as J*e.
+    proj._vault.upsert_entity(
+        token="<<np:joe>>", original="Joe", label="nom_personne", confidence=0.9,
+    )
+    # Plus the canonical Phase 2 leak fixtures
+    _seed_pii(proj)
+
+    sa = asyncio.run(svc.subject_access(
+        tokens=["<<np:joe>>", "<<np:1>>"], project="leak-sa", max_excerpts=10,
+    ))
+
+    out = Path.home() / ".piighost" / "exports" / "subject_access.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    asyncio.run(svc.render_compliance_doc(
+        data=sa.model_dump(), format="md", profile="generic",
+        output_path=str(out),
+    ))
+    rendered = out.read_text(encoding="utf-8")
+
+    # No raw PII (long forms) anywhere
+    for raw in [*_KNOWN_RAW_PII, "Joe"]:
+        assert raw not in rendered, (
+            f"Raw PII '{raw}' leaked in rendered SubjectAccessReport"
+        )
+    # No partial mask either (the J*e form)
+    assert "J*e" not in rendered, "_mask partial-leak surfaced"
+
+    asyncio.run(svc.close())

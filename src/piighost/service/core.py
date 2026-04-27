@@ -583,7 +583,9 @@ class _ProjectService:
         )
         meta_by_id = {m.doc_id: m for m in docs_meta}
 
-        # 3. Categorize tokens by label and build masked previews
+        # 3. Categorize tokens by label and build masked previews.
+        # Uses the central _mask() helper which returns the opaque
+        # <<SUBJECT>> placeholder (no character of the original survives).
         categories: dict[str, int] = {}
         previews: list[str] = []
         for tok in tokens:
@@ -591,11 +593,7 @@ class _ProjectService:
             if entry is None:
                 continue
             categories[entry.label] = categories.get(entry.label, 0) + 1
-            raw = entry.original or ""
-            if len(raw) <= 2:
-                masked = "**"
-            else:
-                masked = f"{raw[0]}{'*' * (len(raw) - 2)}{raw[-1]}"
+            masked = self._mask(entry.original or "")
             previews.append(f"{masked} ({entry.label})")
 
         # 4. Build doc refs from indexed_files + documents_meta
@@ -878,10 +876,19 @@ class _ProjectService:
     # ---- helpers ----
 
     @staticmethod
-    def _mask(original: str) -> str:
-        if len(original) <= 2:
-            return "*" * len(original)
-        return original[0] + "*" * (len(original) - 2) + original[-1]
+    def _mask(original: str) -> str:  # noqa: ARG004 - kept for API stability
+        """Return an opaque label-only placeholder.
+
+        Previously emitted character-level masks like ``J*e`` for
+        ``"Joe"`` — a partial PII leak when surfaced via
+        SubjectAccessReport.subject_preview through render_compliance_doc.
+        Now returns a constant ``<<SUBJECT>>`` token so no character of
+        the original ever reaches a render pipeline.
+
+        The ``original`` argument is intentionally unused — the function
+        exists only to centralize the placeholder.
+        """
+        return "<<SUBJECT>>"
 
     def _to_entry_model(self, v: VaultEntry, *, reveal: bool) -> VaultEntryModel:
         return VaultEntryModel(
