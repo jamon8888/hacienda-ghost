@@ -105,9 +105,34 @@ def test_is_alive_with_retry_treats_starting_as_alive(tmp_path, monkeypatch):
     assert lifecycle._is_alive_with_retry(hs, tmp_path, retries=1, delay=0.0) is True
 
 
-def test_is_alive_with_retry_false_when_no_health_and_no_marker(tmp_path, monkeypatch):
+def test_is_alive_with_retry_false_when_no_health_and_no_marker_and_old(tmp_path, monkeypatch):
     monkeypatch.setattr(lifecycle, "_is_alive", lambda hs: False)
-    hs = DaemonHandshake(pid=os.getpid(), port=1, token="t", started_at=int(time.time()))
+    # started_at well outside the recent-grace window
+    stale_ts = int(time.time()) - 24 * 3600
+    hs = DaemonHandshake(pid=os.getpid(), port=1, token="t", started_at=stale_ts)
+    assert lifecycle._is_alive_with_retry(hs, tmp_path, retries=1, delay=0.0) is False
+
+
+def test_is_alive_with_retry_treats_recent_and_alive_pid_as_alive(tmp_path, monkeypatch):
+    """Even if /health is briefly unresponsive (transient slow GC, busy
+    indexing job, disk hiccup), a daemon whose pid is alive and whose
+    handshake is recent must NOT be declared stale — otherwise
+    concurrent shims race into _cleanup_stale and kill the daemon."""
+    monkeypatch.setattr(lifecycle, "_is_alive", lambda hs: False)
+    # No starting marker, but handshake is from 30 seconds ago and our
+    # own pid is alive.
+    hs = DaemonHandshake(pid=os.getpid(), port=1, token="t",
+                         started_at=int(time.time()) - 30)
+    assert lifecycle._is_alive_with_retry(hs, tmp_path, retries=1, delay=0.0) is True
+
+
+def test_is_alive_with_retry_dead_pid_after_grace_returns_false(tmp_path, monkeypatch):
+    """A handshake whose pid no longer exists must not be granted the
+    recent-grace bypass — that would prevent legitimate cleanup of a
+    crashed daemon."""
+    monkeypatch.setattr(lifecycle, "_is_alive", lambda hs: False)
+    hs = DaemonHandshake(pid=999_999, port=1, token="t",
+                         started_at=int(time.time()))
     assert lifecycle._is_alive_with_retry(hs, tmp_path, retries=1, delay=0.0) is False
 
 

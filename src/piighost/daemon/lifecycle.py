@@ -74,20 +74,48 @@ def _is_alive_with_retry(
     delay: float = 0.4,
 ) -> bool:
     """Like _is_alive but retries on transient HTTP failures, and treats
-    "starting" as alive (the daemon's HTTP server is mid-lifespan-startup
-    behind a 60-90s eager model warm).
+    "starting" or "process-alive-and-recent" as alive too.
 
-    Prevents a second lock-holder from killing a live daemon whose port is
-    momentarily slow to respond (common on Windows under concurrent load)
-    or whose port simply isn't bound yet because warm-up is still running.
+    Three signals make us return True:
+      1. ``GET /health`` returns 200 (the obvious case)
+      2. The ``daemon.starting`` marker is present with a live pid —
+         the daemon's HTTP server isn't bound yet because lifespan
+         eager-warm is still running
+      3. The handshake pid is alive AND its ``started_at`` is younger
+         than ``_HEALTHY_GRACE_SEC`` — the daemon is up and known to
+         us; treat /health failure as transient (GC pause, busy
+         indexing job, slow disk) rather than evidence of staleness
+
+    Without (3), every transient /health hiccup on a healthy daemon
+    triggered _cleanup_stale and killed it under the next shim's foot.
+    Multiple MCP clients (Claude Code + Claude Desktop chat) regularly
+    raced into this state.
     """
     for _ in range(retries):
         if _is_alive(hs):
             return True
         if _is_starting(vault_dir):
             return True
+        if _is_recent_and_pid_alive(hs):
+            return True
         time.sleep(delay)
     return False
+
+
+# How long after a daemon's started_at we treat a transient /health
+# failure as "probably busy" rather than "stale". Bigger than any
+# realistic GC pause + LanceDB compaction, smaller than a sane
+# session-length idle.
+_HEALTHY_GRACE_SEC = 600.0  # 10 minutes
+
+
+def _is_recent_and_pid_alive(hs: DaemonHandshake) -> bool:
+    """Return True iff ``hs.pid`` is alive AND ``hs.started_at`` is
+    within ``_HEALTHY_GRACE_SEC``. See :func:`_is_alive_with_retry`."""
+    if not psutil.pid_exists(hs.pid):
+        return False
+    age = time.time() - hs.started_at
+    return age <= _HEALTHY_GRACE_SEC
 
 
 def ensure_daemon(vault_dir: Path, *, timeout_sec: float = 180.0) -> DaemonHandshake:
