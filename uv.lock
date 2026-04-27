@@ -2731,10 +2731,20 @@ name = "piighost"
 version = "0.8.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fastmcp" },
+    { name = "gliner2" },
     { name = "httpx" },
+    { name = "kreuzberg" },
+    { name = "lancedb" },
+    { name = "mcp" },
     { name = "portalocker" },
     { name = "psutil" },
+    { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "rank-bm25" },
+    { name = "requests" },
+    { name = "sentence-transformers" },
+    { name = "typer" },
     { name = "typing-extensions" },
 ]
 
@@ -2743,19 +2753,10 @@ all = [
     { name = "aiocache" },
     { name = "cryptography" },
     { name = "faker" },
-    { name = "fastmcp" },
-    { name = "gliner2" },
     { name = "httpx" },
-    { name = "kreuzberg", marker = "sys_platform != 'win32'" },
-    { name = "lancedb" },
     { name = "langchain" },
     { name = "langchain-core" },
-    { name = "mcp" },
     { name = "mitmproxy", marker = "python_full_version >= '3.12'" },
-    { name = "pyarrow" },
-    { name = "rank-bm25" },
-    { name = "requests" },
-    { name = "sentence-transformers" },
     { name = "spacy" },
     { name = "starlette" },
     { name = "torch" },
@@ -2771,33 +2772,21 @@ client = [
     { name = "httpx" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
+compliance = [
+    { name = "jinja2" },
+    { name = "markdown" },
+]
 faker = [
     { name = "faker" },
 ]
 forward = [
     { name = "mitmproxy", marker = "python_full_version >= '3.12'" },
 ]
-gliner2 = [
-    { name = "gliner2" },
-    { name = "requests" },
-]
-index = [
-    { name = "kreuzberg", marker = "sys_platform != 'win32'" },
-    { name = "lancedb" },
-    { name = "pyarrow" },
-    { name = "rank-bm25" },
-    { name = "sentence-transformers" },
-]
 langchain = [
     { name = "langchain" },
 ]
 llm = [
     { name = "langchain-core" },
-]
-mcp = [
-    { name = "fastmcp" },
-    { name = "mcp" },
-    { name = "typer" },
 ]
 middleware = [
     { name = "aiocache" },
@@ -2858,37 +2847,39 @@ requires-dist = [
     { name = "aiocache", marker = "extra == 'middleware'", specifier = ">=0.12" },
     { name = "cryptography", marker = "extra == 'proxy'", specifier = ">=42.0" },
     { name = "faker", marker = "extra == 'faker'", specifier = ">=40.11" },
-    { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.4" },
-    { name = "gliner2", marker = "extra == 'gliner2'", specifier = ">=1.2" },
+    { name = "fastmcp", specifier = ">=3.2.4" },
+    { name = "gliner2", specifier = ">=1.2" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "httpx", marker = "extra == 'client'", specifier = ">=0.28" },
     { name = "httpx", marker = "extra == 'proxy'", specifier = ">=0.28" },
-    { name = "kreuzberg", marker = "sys_platform != 'win32' and extra == 'index'", specifier = ">=4.9.4" },
-    { name = "lancedb", marker = "extra == 'index'", specifier = ">=0.30.2" },
+    { name = "jinja2", marker = "extra == 'compliance'", specifier = ">=3.1" },
+    { name = "kreuzberg", specifier = ">=4.9.4" },
+    { name = "lancedb", specifier = ">=0.30.2" },
     { name = "langchain", marker = "extra == 'langchain'", specifier = ">=1.2" },
     { name = "langchain", marker = "extra == 'middleware'", specifier = ">=1.2" },
     { name = "langchain-core", marker = "extra == 'llm'", specifier = ">=0.3" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "markdown", marker = "extra == 'compliance'", specifier = ">=3.5" },
+    { name = "mcp", specifier = ">=1.0" },
     { name = "mitmproxy", marker = "python_full_version >= '3.12' and extra == 'forward'", specifier = ">=11.0.0,<12" },
     { name = "piighost", extras = ["gliner2", "langchain", "faker", "cache", "client", "spacy", "transformers", "llm", "mcp", "index", "proxy", "forward"], marker = "extra == 'all'" },
     { name = "portalocker", specifier = ">=3.2.0" },
     { name = "psutil", specifier = ">=7.2.2" },
-    { name = "pyarrow", marker = "extra == 'index'", specifier = ">=14.0" },
+    { name = "pyarrow", specifier = ">=14.0" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "rank-bm25", marker = "extra == 'index'", specifier = ">=0.2.2" },
-    { name = "requests", marker = "extra == 'gliner2'", specifier = ">=2.28" },
-    { name = "sentence-transformers", marker = "extra == 'index'", specifier = ">=3.0" },
+    { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "requests", specifier = ">=2.28" },
+    { name = "sentence-transformers", specifier = ">=3.0" },
     { name = "spacy", marker = "extra == 'spacy'", specifier = ">=3.7" },
     { name = "starlette", marker = "extra == 'proxy'", specifier = ">=0.37" },
     { name = "torch", marker = "extra == 'transformers'", specifier = ">=2.0" },
     { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.40" },
-    { name = "typer", marker = "extra == 'mcp'", specifier = ">=0.9" },
+    { name = "typer", specifier = ">=0.9" },
     { name = "typer", marker = "extra == 'proxy'", specifier = ">=0.9" },
     { name = "typing-extensions", specifier = ">=4.12" },
     { name = "typing-extensions", marker = "python_full_version < '3.11' and extra == 'client'", specifier = ">=4.4" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'proxy'", specifier = ">=0.30" },
 ]
-provides-extras = ["gliner2", "langchain", "faker", "cache", "middleware", "client", "spacy", "transformers", "llm", "mcp", "index", "proxy", "forward", "all"]
+provides-extras = ["gliner2", "mcp", "index", "langchain", "faker", "cache", "middleware", "client", "spacy", "transformers", "llm", "proxy", "forward", "compliance", "all"]
 
 [package.metadata.requires-dev]
 dev = [
