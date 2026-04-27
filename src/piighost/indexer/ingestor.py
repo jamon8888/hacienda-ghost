@@ -61,3 +61,34 @@ async def extract_text(path: Path, *, max_bytes: int = 10_485_760) -> str | None
         return text.strip() if text and text.strip() else None
     except Exception:
         return None
+
+
+async def extract_with_metadata(path: Path) -> tuple[str | None, dict]:
+    """Like ``extract_text`` but also returns the kreuzberg metadata dict.
+
+    Returns ``(text, metadata)``. For plain-text formats, metadata is
+    ``{}`` (kreuzberg is not invoked). On extraction failure both are
+    returned as ``(None, {})``.
+
+    The metadata is a flat dict in kreuzberg v4.9.4 — keys like
+    ``title``, ``authors``, ``created_at``, ``format_type``,
+    ``page_count``, ``is_encrypted`` etc. live at the top level
+    (NOT nested under ``meta["pdf"]`` like older versions).
+    """
+    if path.suffix.lower() in _PLAIN_TEXT_EXTENSIONS:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            return (text.strip() if text and text.strip() else None), {}
+        except OSError:
+            return None, {}
+    try:
+        import kreuzberg  # optional dep — installed via `[index]` extras
+    except ImportError:
+        return None, {}
+    try:
+        result = await kreuzberg.extract_file(path)
+        text = result.content
+        meta = dict(result.metadata or {})
+        return ((text.strip() if text and text.strip() else None), meta)
+    except Exception:
+        return None, {}
