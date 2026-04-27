@@ -220,6 +220,67 @@ class Vault:
         )
         return cur.rowcount
 
+    def delete_token(self, token: str) -> int:
+        """Remove a token from both ``entities`` and ``doc_entities``.
+
+        Returns the number of ``doc_entities`` rows that were
+        affected (i.e. how many (doc_id, position) tuples the token
+        was anchored to). Idempotent: returns 0 if the token doesn't
+        exist.
+
+        Used by Art. 17 right-to-be-forgotten cascade.
+        """
+        cur = self._conn.execute(
+            "DELETE FROM doc_entities WHERE token = ?", (token,)
+        )
+        affected = cur.rowcount
+        self._conn.execute(
+            "DELETE FROM entities WHERE token = ?", (token,)
+        )
+        return affected
+
+    def docs_containing_tokens(self, tokens: list[str]) -> list[str]:
+        """Return distinct ``doc_id`` values that contain any of the
+        given tokens. Used by ``subject_access`` and ``forget_subject``
+        to find every document a person appears in via a single SQL
+        query (no full-text search needed).
+
+        Empty list input → empty list output.
+        """
+        if not tokens:
+            return []
+        placeholders = ",".join("?" * len(tokens))
+        rows = self._conn.execute(
+            f"SELECT DISTINCT doc_id FROM doc_entities "
+            f"WHERE token IN ({placeholders})",
+            tokens,
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def cooccurring_tokens(self, seed_token: str) -> list[tuple[str, int]]:
+        """Return tokens that share a ``doc_id`` with ``seed_token``.
+
+        Each pair is ``(token, shared_doc_count)`` ordered by
+        descending shared count. The seed is excluded from the
+        result. Used by the subject-clustering algorithm to find
+        tokens that probably refer to the same person (same
+        documents → likely same subject).
+
+        Unknown seed → empty list.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT de2.token, COUNT(DISTINCT de1.doc_id) AS shared
+            FROM doc_entities de1
+            JOIN doc_entities de2 USING (doc_id)
+            WHERE de1.token = ? AND de2.token != ?
+            GROUP BY de2.token
+            ORDER BY shared DESC
+            """,
+            (seed_token, seed_token),
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
     @staticmethod
     def _row_to_indexed_file(row: sqlite3.Row) -> IndexedFileRecord:
         return IndexedFileRecord(
