@@ -445,6 +445,14 @@ def _build_mcp(*, vault_dir) -> FastMCP:
             },
         )
 
+    @mcp.tool(name="controller_profile_defaults",
+              description=by_name["controller_profile_defaults"].description)
+    async def controller_profile_defaults(profession: str) -> dict:
+        return await _lazy_dispatch(
+            by_name["controller_profile_defaults"],
+            params={"profession": profession},
+        )
+
     # ------------------------------------------------------------------
     # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
     # ------------------------------------------------------------------

@@ -208,6 +208,18 @@ TOOL_CATALOG: list[ToolSpec] = [
         ),
         timeout_s=5.0,
     ),
+    ToolSpec(
+        name="controller_profile_defaults",
+        rpc_method="controller_profile_defaults",
+        description=(
+            "Read-only: return the bundled default profile for a profession "
+            "(avocat / notaire / medecin / expert_comptable / rh / generic). "
+            "Used by /hacienda:setup to pre-fill finalites, bases_legales, "
+            "duree_conservation, and ordinal_label. Returns {} for unknown "
+            "profession."
+        ),
+        timeout_s=2.0,
+    ),
 
     # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
     ToolSpec(

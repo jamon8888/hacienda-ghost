@@ -344,6 +344,10 @@ async def _dispatch(
             scope=params.get("scope", "global"),
             project=params.get("project") or None,
         )
+    if method == "controller_profile_defaults":
+        return await svc.controller_profile_defaults(
+            profession=params["profession"],
+        )
     if method == "processing_register":
         report = await svc.processing_register(
             project=params.get("project", "default"),
