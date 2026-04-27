@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -125,3 +127,40 @@ class FolderError(BaseModel):
     file_path: str        # full path — already exposed by index_status
     category: str         # one of the error_taxonomy values
     indexed_at: int       # unix epoch seconds
+
+
+class DocumentMetadata(BaseModel):
+    """Metadata extracted at index time for one document.
+
+    Combines kreuzberg's free metadata (title, authors, dates) with
+    project-level semantics (doc_type, dossier_id, parties). Used by
+    the RGPD compliance subsystem (Phases 1 + 2).
+    """
+
+    doc_id: str
+    doc_type: Literal[
+        "contrat", "facture", "email", "courrier", "acte_notarie",
+        "jugement", "decision_administrative", "attestation",
+        "cv", "note_interne", "autre",
+    ] = "autre"
+    doc_type_confidence: float = 0.0
+
+    doc_date: int | None = None
+    doc_date_source: Literal[
+        "kreuzberg_creation", "kreuzberg_modified",
+        "heuristic_detected", "filename", "none",
+    ] = "none"
+
+    # Free metadata from kreuzberg (FLAT in v4.9.4 — not nested under "pdf")
+    doc_title: str | None = None
+    doc_subject: str | None = None
+    doc_authors: list[str] = Field(default_factory=list)
+    doc_language: str | None = None
+    doc_page_count: int | None = None
+    doc_format: str = ""
+    is_encrypted_source: bool = False
+
+    # Project semantics
+    parties: list[str] = Field(default_factory=list)
+    dossier_id: str = ""
+    extracted_at: int
