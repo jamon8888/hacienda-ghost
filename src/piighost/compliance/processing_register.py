@@ -160,20 +160,76 @@ def _count_by(items, attr: str) -> dict[str, int]:
     return out
 
 
+# Map raw party labels (as they appear in documents_meta.parties_json)
+# to the user-facing data-subject category emitted in the registre.
+_PARTY_LABEL_MAP = {
+    "client": "clients",
+    "clients": "clients",
+    "patient": "patients",
+    "patients": "patients",
+    "salarie": "salariés",
+    "salariés": "salariés",
+    "salaries": "salariés",
+    "employe": "salariés",
+    "employee": "salariés",
+    "personnel": "salariés",
+    "candidat": "candidats",
+    "tiers": "tiers contractants",
+    "fournisseur": "fournisseurs",
+}
+
+
 def _classify_data_subjects(docs_meta, profession: str) -> list[str]:
-    """Heuristic: dossier_id 'client*' -> 'clients', 'rh|paie|salarie' -> 'salaries'."""
+    """Return the data-subject categories for the registre.
+
+    Strategy (in order):
+      1. Aggregate ``parties_json`` across all indexed documents and map
+         each unique label to a user-facing category via ``_PARTY_LABEL_MAP``.
+         This is the data-driven path — what the indexer actually saw.
+      2. If parties_json is empty across the project, fall back to the
+         project-name heuristic (dossier_id starts with 'client'/'dossier'/
+         'rh'/'paie'/'salarie'/'personnel').
+      3. If both are inconclusive, default to a profession-driven seed
+         ('clients du cabinet' for avocat, 'salariés' for rh, 'clients'
+         otherwise).
+
+    The mapping is deliberately conservative — unknown party labels are
+    surfaced as-is so the avocat sees them and can correct the registre
+    manually rather than have piighost silently invent a category.
+    """
     subjects: set[str] = set()
+
+    # Path 1: data-driven from parties_json
+    for m in docs_meta:
+        for raw in m.parties or ():
+            key = raw.strip().lower()
+            mapped = _PARTY_LABEL_MAP.get(key)
+            if mapped:
+                subjects.add(mapped)
+            elif key:
+                # Unknown label — surface as-is for the avocat to review
+                subjects.add(raw.strip())
+
+    if subjects:
+        return sorted(subjects)
+
+    # Path 2: project-name heuristic (legacy)
     for m in docs_meta:
         d = (m.dossier_id or "").lower()
         if d.startswith("client") or d.startswith("dossier"):
             subjects.add("clients")
         if any(k in d for k in ("rh", "paie", "salarie", "personnel")):
             subjects.add("salariés")
-    if profession == "avocat" and not subjects:
-        subjects.add("clients du cabinet")
-    if profession == "rh" and not subjects:
-        subjects.add("salariés")
-    return sorted(subjects) if subjects else ["clients"]
+
+    if subjects:
+        return sorted(subjects)
+
+    # Path 3: profession-driven default
+    if profession == "avocat":
+        return ["clients du cabinet"]
+    if profession == "rh":
+        return ["salariés"]
+    return ["clients"]
 
 
 def _detect_security_measures(stats) -> list[SecurityMeasureItem]:

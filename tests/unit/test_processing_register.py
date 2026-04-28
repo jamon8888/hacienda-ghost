@@ -109,3 +109,93 @@ def test_processing_register_audit_event_written(vault_dir, monkeypatch):
     types = [e.event_type for e in events]
     assert "registre_generated" in types
     asyncio.run(svc.close())
+
+
+def test_register_data_subjects_from_parties(vault_dir, monkeypatch):
+    """data_subject_categories surfaces unique parties from documents_meta."""
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("subjects-parties"))
+    proj = asyncio.run(svc._get_project("subjects-parties"))
+
+    # Seed two documents with different party labels
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="contrat",
+            parties=["client", "avocat", "tiers"],
+            dossier_id="dossier-acme",
+            extracted_at=1700000000,
+        ),
+    )
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-2",
+            doc_type="facture",
+            parties=["client"],
+            dossier_id="dossier-acme",
+            extracted_at=1700000001,
+        ),
+    )
+
+    register = asyncio.run(svc.processing_register(project="subjects-parties"))
+    subjects = set(register.data_subject_categories)
+    # Expect labels derived from the actual parties (deduplicated, sorted)
+    assert "client" in subjects or "clients" in subjects, subjects
+    assert "tiers" in subjects or "tiers contractants" in subjects, subjects
+    asyncio.run(svc.close())
+
+
+def test_register_data_subjects_falls_back_when_parties_empty(vault_dir, monkeypatch):
+    """When parties_json is empty across all docs, fall back to the project-name heuristic."""
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("subjects-empty"))
+    proj = asyncio.run(svc._get_project("subjects-empty"))
+
+    # Seed a doc with NO parties
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="autre",
+            parties=[],
+            dossier_id="client-acme",   # name-heuristic still fires
+            extracted_at=1700000000,
+        ),
+    )
+
+    register = asyncio.run(svc.processing_register(project="subjects-empty"))
+    subjects = set(register.data_subject_categories)
+    assert "clients" in subjects, subjects
+    asyncio.run(svc.close())
+
+
+def test_register_data_subjects_rh_uses_salaries(vault_dir, monkeypatch):
+    """RH profession + parties listing 'salarie' surfaces 'salariés'."""
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.controller_profile_set(
+        profile={"controller": {"name": "Service RH", "profession": "rh"}},
+        scope="global",
+    ))
+    asyncio.run(svc.create_project("subjects-rh"))
+    proj = asyncio.run(svc._get_project("subjects-rh"))
+
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="contrat",
+            parties=["salarie", "employeur"],
+            dossier_id="dossier-rh-2026",
+            extracted_at=1700000000,
+        ),
+    )
+
+    register = asyncio.run(svc.processing_register(project="subjects-rh"))
+    subjects = set(register.data_subject_categories)
+    assert "salariés" in subjects or "salaries" in subjects, subjects
+    asyncio.run(svc.close())
