@@ -454,6 +454,48 @@ def _build_mcp(*, vault_dir) -> FastMCP:
         )
 
     # ------------------------------------------------------------------
+    # Legal (OpenLégi)
+    # ------------------------------------------------------------------
+
+    @mcp.tool(name="extract_legal_refs",
+              description=by_name["extract_legal_refs"].description)
+    async def extract_legal_refs(text: str) -> list[dict]:
+        return await _lazy_dispatch(
+            by_name["extract_legal_refs"], params={"text": text},
+        )
+
+    @mcp.tool(name="verify_legal_ref",
+              description=by_name["verify_legal_ref"].description)
+    async def verify_legal_ref(ref: dict) -> dict:
+        return await _lazy_dispatch(
+            by_name["verify_legal_ref"], params={"ref": ref},
+        )
+
+    @mcp.tool(name="search_legal",
+              description=by_name["search_legal"].description)
+    async def search_legal(
+        query: str, source: str = "auto", max_results: int = 5,
+    ) -> list[dict]:
+        return await _lazy_dispatch(
+            by_name["search_legal"],
+            params={"query": query, "source": source, "max_results": max_results},
+        )
+
+    @mcp.tool(name="legal_passthrough",
+              description=by_name["legal_passthrough"].description)
+    async def legal_passthrough(tool: str, args: dict) -> dict:
+        return await _lazy_dispatch(
+            by_name["legal_passthrough"], params={"tool": tool, "args": args},
+        )
+
+    @mcp.tool(name="legal_credentials_set",
+              description=by_name["legal_credentials_set"].description)
+    async def legal_credentials_set(token: str) -> dict:
+        return await _lazy_dispatch(
+            by_name["legal_credentials_set"], params={"token": token},
+        )
+
+    # ------------------------------------------------------------------
     # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
     # ------------------------------------------------------------------
 

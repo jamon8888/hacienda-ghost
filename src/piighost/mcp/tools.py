@@ -255,4 +255,59 @@ TOOL_CATALOG: list[ToolSpec] = [
         ),
         timeout_s=60.0,
     ),
+
+    # ---- Legal (OpenLégi) ----
+    ToolSpec(
+        name="extract_legal_refs",
+        rpc_method="legal_extract_refs",
+        description=(
+            "Extract French legal references from text (article codes, "
+            "lois, décrets, ordonnances, jurisprudence). Pure-function — "
+            "no network, no token required. Returns a list of "
+            "LegalReference dicts with sequential ref_id."
+        ),
+        timeout_s=2.0,
+    ),
+    ToolSpec(
+        name="verify_legal_ref",
+        rpc_method="legal_verify_ref",
+        description=(
+            "Verify one legal reference against OpenLégi (Legifrance). "
+            "Returns VerificationResult with status (VERIFIE_EXACT / "
+            "HALLUCINATION / UNKNOWN_*) + score 0-100. Returns "
+            "UNKNOWN_OPENLEGI_DISABLED if [openlegi].enabled = false."
+        ),
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="search_legal",
+        rpc_method="legal_search",
+        description=(
+            "Search OpenLégi by source: 'code' / 'jurisprudence_judiciaire' "
+            "/ 'jurisprudence_administrative' / 'cnil' / 'jorf' / "
+            "'lois_decrets' / 'conventions_collectives' / 'auto'. Returns "
+            "list of LegalHit. Empty list if OpenLégi disabled or no token."
+        ),
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="legal_passthrough",
+        rpc_method="legal_passthrough",
+        description=(
+            "Power-user escape hatch: invoke any of OpenLégi's 12 raw "
+            "tools by name. Outbound payload still passes through the "
+            "redactor — no opt-out."
+        ),
+        timeout_s=30.0,
+    ),
+    ToolSpec(
+        name="legal_credentials_set",
+        rpc_method="legal_credentials_set",
+        description=(
+            "Write a PISTE token to ~/.piighost/credentials.toml (chmod "
+            "600 on POSIX). The token is NEVER returned by any read "
+            "method. Used by /hacienda:legal:setup."
+        ),
+        timeout_s=5.0,
+    ),
 ]

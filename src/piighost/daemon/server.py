@@ -367,4 +367,20 @@ async def _dispatch(
             project=params.get("project", "default"),
         )
         return result.model_dump()
+    if method == "legal_extract_refs":
+        return await svc.legal_extract_refs(text=params["text"])
+    if method == "legal_verify_ref":
+        return await svc.legal_verify_ref(ref=params["ref"])
+    if method == "legal_search":
+        return await svc.legal_search(
+            query=params["query"],
+            source=params.get("source", "auto"),
+            max_results=params.get("max_results", 5),
+        )
+    if method == "legal_passthrough":
+        return await svc.legal_passthrough(
+            tool=params["tool"], args=params["args"],
+        )
+    if method == "legal_credentials_set":
+        return await svc.legal_credentials_set(token=params["token"])
     raise ValueError("Unknown method")
