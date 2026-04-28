@@ -100,6 +100,76 @@ def test_build_metadata_uses_kreuzberg_title_and_authors(tmp_path):
     assert meta.dossier_id == "client1"
 
 
+def test_build_metadata_with_entity_refs_populates_parties(tmp_path):
+    """The post-anonymize entity_refs path: tokens computed by
+    LabelHashPlaceholderFactory are accepted directly, no re-hashing.
+
+    Mirrors the indexer's call shape after Phase 8: index_path() calls
+    anonymize() (producing EntityRef list with pre-computed tokens),
+    then passes those refs to build_metadata via entity_refs=.
+    Closes the parties_json gap surfaced in the GLiNER2 e2e smoke.
+    """
+    from types import SimpleNamespace
+
+    project_root = tmp_path / "cabinet"
+    project_root.mkdir()
+    (project_root / "client1").mkdir()
+    fp = project_root / "client1" / "contract.txt"
+    fp.write_text("x")
+
+    refs = [
+        # Tokens in <<label:HASH8>> form — what anonymize() returns.
+        SimpleNamespace(token="<<nom_personne:abc12345>>",
+                        label="nom_personne", count=2),
+        SimpleNamespace(token="<<organisation:def67890>>",
+                        label="organisation", count=1),
+        SimpleNamespace(token="<<date:00000000>>", label="date", count=5),  # not a party
+        SimpleNamespace(token="<<email:11111111>>", label="email", count=3),  # not a party
+    ]
+    meta = build_metadata(
+        doc_id="abc",
+        file_path=fp,
+        project_root=project_root,
+        content="contract content",
+        kreuzberg_meta={},
+        detections=[],
+        entity_refs=refs,
+    )
+    # Two parties: nom_personne + organisation; date and email filtered out
+    assert len(meta.parties) == 2
+    assert "<<nom_personne:abc12345>>" in meta.parties
+    assert "<<organisation:def67890>>" in meta.parties
+
+
+def test_build_metadata_entity_refs_dedup_against_detections(tmp_path):
+    """Both inputs accepted simultaneously; tokens deduplicated."""
+    from types import SimpleNamespace
+
+    project_root = tmp_path / "p"
+    project_root.mkdir()
+    fp = project_root / "x.txt"
+    fp.write_text("x")
+
+    # Detection produces token via _party_token("Marie", "nom_personne")
+    # = sha256("marie:nom_personne")[:8] — let's not compute by hand;
+    # trust the implementation. We just need the SAME (text,label) on
+    # both sides to prove dedup works.
+    from piighost.service.doc_metadata_extractor import _party_token
+    expected_token = _party_token("Marie", "nom_personne")
+
+    meta = build_metadata(
+        doc_id="abc",
+        file_path=fp,
+        project_root=project_root,
+        content="...",
+        kreuzberg_meta={},
+        detections=[_det("Marie", "nom_personne", 0, 5)],
+        entity_refs=[SimpleNamespace(token=expected_token, label="nom_personne")],
+    )
+    # Same logical entity → exactly one party in the output
+    assert meta.parties == [expected_token]
+
+
 def test_build_metadata_with_pii_detections_populates_parties(tmp_path):
     project_root = tmp_path / "cabinet"
     project_root.mkdir()

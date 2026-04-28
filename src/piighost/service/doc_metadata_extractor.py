@@ -256,6 +256,7 @@ def build_metadata(
     content: str,
     kreuzberg_meta: dict[str, Any],
     detections: list[Detection],
+    entity_refs: list | None = None,
 ) -> DocumentMetadata:
     """Stitch all available signals into one ``DocumentMetadata``.
 
@@ -303,7 +304,21 @@ def build_metadata(
     # 3. Extract dossier_id
     dossier_id = _extract_dossier_id(file_path, project_root)
 
-    # 4. Build parties list — opaque tokens only, raw PII never leaves this fn
+    # 4. Build parties list — opaque tokens only, raw PII never leaves this fn.
+    #
+    # Two input shapes are supported:
+    #   - ``detections`` (list of ``Detection``): raw NER output. We hash
+    #     ``(text, label)`` to derive the party token. Used when the caller
+    #     has the pre-anonymized stream.
+    #   - ``entity_refs`` (list of EntityRef-like with ``.token`` + ``.label``):
+    #     post-anonymize references where the token has already been computed
+    #     by ``LabelHashPlaceholderFactory``. We use the token directly without
+    #     re-hashing (saves work; both schemes produce identical output).
+    #
+    # The indexer pipeline calls ``anonymize()`` first (entity_refs available),
+    # so passing them avoids a redundant detect call. ``detections`` is
+    # preserved for callers that still have raw Detection objects (tests,
+    # future extension points).
     seen_tokens: set[str] = set()
     parties: list[str] = []
     for d in detections:
@@ -313,6 +328,15 @@ def build_metadata(
         if token not in seen_tokens:
             seen_tokens.add(token)
             parties.append(token)
+    for ref in entity_refs or ():
+        label = getattr(ref, "label", None)
+        if label not in _PARTY_LABELS:
+            continue
+        token = getattr(ref, "token", None)
+        if not token or token in seen_tokens:
+            continue
+        seen_tokens.add(token)
+        parties.append(token)
 
     # 5. Assemble DocumentMetadata
     authors_raw = kreuzberg_meta.get("authors")

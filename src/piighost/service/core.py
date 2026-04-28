@@ -343,12 +343,17 @@ class _ProjectService:
                             project_root=root,
                             content=text or "",
                             kreuzberg_meta=kmeta,
-                            # result.entities are EntityRef (token+label+count),
-                            # not raw Detection objects.  Phase 0 does not need
-                            # detection-based date/party extraction; pass [] so
-                            # build_metadata uses kreuzberg + filename heuristics
-                            # only.  Phase 1 reads doc_entities from the vault.
+                            # ``result.entities`` is a list of EntityRef
+                            # (token+label+count) — post-anonymize, so the
+                            # placeholder tokens are already computed by
+                            # LabelHashPlaceholderFactory in the same
+                            # ``<<label:HASH8>>`` shape ``_party_token``
+                            # would emit. Passing them via entity_refs
+                            # populates documents_meta.parties_json for
+                            # the Phase 6 _classify_data_subjects path
+                            # without a redundant detect call.
                             detections=[],
+                            entity_refs=result.entities,
                         )
                         self._indexing_store.upsert_document_meta(
                             self._project_name, doc_meta,
