@@ -1390,8 +1390,18 @@ class PIIGhostService:
 
         response = await self._legal_call(tool, args, ttl_seconds=7 * 24 * 3600)
         if isinstance(response, dict) and "error" in response:
+            cat = response.get("category", "unknown")
+            status_map = {
+                "auth": "UNKNOWN_AUTH_FAILED",
+                "rate_limit": "UNKNOWN_RATE_LIMITED",
+                "network": "UNKNOWN_NETWORK",
+                "parse": "UNKNOWN_PARSE_ERROR",
+                "http": "UNKNOWN_NETWORK",
+                "unknown": "UNKNOWN_NETWORK",
+            }
             return VerificationResult(
-                status="UNKNOWN_NETWORK", message=str(response["error"]),
+                status=status_map.get(cat, "UNKNOWN_NETWORK"),
+                message=str(response["error"]),
             ).model_dump()
         return self._classify_response(ref_obj, response)
 
@@ -1462,6 +1472,7 @@ class PIIGhostService:
     async def _legal_call(self, tool: str, args: dict, *, ttl_seconds: int) -> dict:
         """Cache → pre-anonymize → redact placeholders → PisteClient → cache.
         The single outbound choke point."""
+        import httpx
         from piighost.legal import LegalCache, OutboundRedactor, PisteClient
         from piighost.service.credentials import CredentialsService
         from pathlib import Path
@@ -1504,8 +1515,20 @@ class PIIGhostService:
                     service=self._config.openlegi.service,
                 ) as client:
                     response = client.call_tool(tool, redacted_args)
+            except httpx.HTTPStatusError as exc:
+                code = exc.response.status_code
+                if code in (401, 403):
+                    return {"error": str(exc), "category": "auth"}
+                if code == 429:
+                    return {"error": str(exc), "category": "rate_limit"}
+                return {"error": str(exc), "category": "http"}
+            except httpx.RequestError as exc:
+                return {"error": str(exc), "category": "network"}
+            except ValueError as exc:
+                # SSE parse errors raised by PisteClient._parse_sse
+                return {"error": str(exc), "category": "parse"}
             except Exception as exc:
-                return {"error": str(exc)}
+                return {"error": str(exc), "category": "unknown"}
 
             cache.set(tool, anonymized_args, response=response, ttl_seconds=ttl_seconds)
             return response

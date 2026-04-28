@@ -137,3 +137,82 @@ def test_passthrough_force_redacts(vault_dir, monkeypatch):
     # in test_legal_outbound_privacy.py (Task 9) does the real check.
     assert "search" in sent_args
     asyncio.run(svc.close())
+
+
+def test_verify_legal_ref_401_maps_to_auth_failed(vault_dir, monkeypatch):
+    """A 401 from OpenLégi must classify as UNKNOWN_AUTH_FAILED, not _NETWORK."""
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("expired-token")
+
+    def handler(request):
+        return httpx.Response(401, text="unauthorized")
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    result = asyncio.run(svc.legal_verify_ref(ref={
+        "ref_id": 1, "ref_type": "ARTICLE_CODE",
+        "raw_text": "article 1240 du Code civil",
+        "numero": "1240", "code": "Code civil", "position": 0,
+    }))
+    assert result["status"] == "UNKNOWN_AUTH_FAILED", result
+    asyncio.run(svc.close())
+
+
+def test_verify_legal_ref_429_maps_to_rate_limited_after_retries(vault_dir, monkeypatch):
+    """After exhausting 429 retries, status must be UNKNOWN_RATE_LIMITED."""
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("ok-token")
+
+    def handler(request):
+        return httpx.Response(429, text="rate limited")
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    result = asyncio.run(svc.legal_verify_ref(ref={
+        "ref_id": 1, "ref_type": "ARTICLE_CODE",
+        "raw_text": "article 1240", "numero": "1240", "code": "Code civil",
+        "position": 0,
+    }))
+    assert result["status"] == "UNKNOWN_RATE_LIMITED", result
+    asyncio.run(svc.close())
+
+
+def test_verify_legal_ref_network_error_maps_to_network(vault_dir, monkeypatch):
+    """A network-level exception (DNS, conn refused) maps to UNKNOWN_NETWORK."""
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("ok-token")
+
+    def handler(request):
+        raise httpx.ConnectError("name resolution failed")
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    result = asyncio.run(svc.legal_verify_ref(ref={
+        "ref_id": 1, "ref_type": "ARTICLE_CODE",
+        "raw_text": "article 1240", "numero": "1240", "code": "Code civil",
+        "position": 0,
+    }))
+    assert result["status"] == "UNKNOWN_NETWORK", result
+    asyncio.run(svc.close())
