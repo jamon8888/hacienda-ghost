@@ -5,6 +5,7 @@ ship in the wheel. The loader is read-only and never touches user files.
 """
 from __future__ import annotations
 
+import logging
 import re
 import sys
 from importlib import resources
@@ -16,6 +17,7 @@ else:  # pragma: no cover
 
 
 _PROFESSION_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_LOGGER = logging.getLogger(__name__)
 
 
 def load_bundled_profile(profession: str) -> dict:
@@ -24,6 +26,12 @@ def load_bundled_profile(profession: str) -> dict:
 
     The validation regex blocks path traversal — *profession* is reachable
     from the MCP boundary (untrusted).
+
+    Returns ``{}`` for:
+      - Invalid input (regex mismatch) — silent (this is normal flow).
+      - Unknown profession (no bundled file) — silent (also normal).
+      - TOMLDecodeError / OSError on a bundled file — logged as a WARNING,
+        because that's a build-time bug we want CI to surface.
     """
     if not _PROFESSION_RE.match(profession or ""):
         return {}
@@ -32,11 +40,20 @@ def load_bundled_profile(profession: str) -> dict:
         if not path.is_file():
             return {}
         return tomllib.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, AttributeError, tomllib.TOMLDecodeError, OSError):
+    except FileNotFoundError:
+        # Bundled file vanished mid-flight — silent fall-through.
+        return {}
+    except AttributeError:
         # AttributeError can fire when importlib.resources returns a
         # MultiplexedPath (namespace-package case) without an .is_file()
-        # method — older Python layouts did this. We keep the catch for
-        # defence-in-depth even though our package layout uses __init__.py
-        # and a regular package, where .is_file() is always defined.
-        # Closes Phase 4 followup #8.
+        # method — older Python layouts did this. Defence-in-depth on
+        # current 3.13+ packaging where __init__.py guarantees .is_file().
+        return {}
+    except (tomllib.TOMLDecodeError, OSError) as exc:
+        _LOGGER.warning(
+            "Failed to load bundled profile %r: %s. "
+            "This is a build-time bug — the bundled TOML should always "
+            "parse. Returning {} so the wizard can fall back to generic.",
+            profession, exc,
+        )
         return {}
