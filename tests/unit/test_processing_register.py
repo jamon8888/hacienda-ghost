@@ -142,9 +142,11 @@ def test_register_data_subjects_from_parties(vault_dir, monkeypatch):
 
     register = asyncio.run(svc.processing_register(project="subjects-parties"))
     subjects = set(register.data_subject_categories)
-    # Expect labels derived from the actual parties (deduplicated, sorted)
-    assert "client" in subjects or "clients" in subjects, subjects
-    assert "tiers" in subjects or "tiers contractants" in subjects, subjects
+    # Mapped via _PARTY_LABEL_MAP: client→clients, tiers→tiers contractants.
+    # Stricter assertion than 'or'-permissive: we know what the mapping
+    # produces.
+    assert "clients" in subjects, subjects
+    assert "tiers contractants" in subjects, subjects
     asyncio.run(svc.close())
 
 
@@ -198,4 +200,36 @@ def test_register_data_subjects_rh_uses_salaries(vault_dir, monkeypatch):
     register = asyncio.run(svc.processing_register(project="subjects-rh"))
     subjects = set(register.data_subject_categories)
     assert "salariés" in subjects or "salaries" in subjects, subjects
+    asyncio.run(svc.close())
+
+
+def test_register_data_subjects_unknown_label_surfaces_as_is(vault_dir, monkeypatch):
+    """An unrecognized parties label is preserved verbatim, not silently dropped.
+
+    The mapping is deliberately conservative — _PARTY_LABEL_MAP doesn't
+    know every possible role label, so unknown ones surface as-is for
+    the avocat to review. This is correct GDPR-engineering: the registre
+    Art. 30 must reflect what's actually in the data.
+    """
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("subjects-unknown"))
+    proj = asyncio.run(svc._get_project("subjects-unknown"))
+
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="autre",
+            parties=["mediateur_judiciaire", "expert_judiciaire"],
+            dossier_id="dossier-acme",
+            extracted_at=1700000000,
+        ),
+    )
+
+    register = asyncio.run(svc.processing_register(project="subjects-unknown"))
+    subjects = set(register.data_subject_categories)
+    # Both labels are not in _PARTY_LABEL_MAP — must appear verbatim
+    assert "mediateur_judiciaire" in subjects, subjects
+    assert "expert_judiciaire" in subjects, subjects
     asyncio.run(svc.close())
