@@ -303,7 +303,7 @@ non supporté), il est listé avec la cause.
 ## Support
 
 - **Issues GitHub :**
-  [github.com/jamon8888/piighost/issues](https://github.com/jamon8888/piighost/issues)
+  [github.com/jamon8888/hacienda-ghost/issues](https://github.com/jamon8888/hacienda-ghost/issues)
 - **Contrats de support payants :** formation cabinet (demi-journée
   à distance), profils profession spécialisés (notaire, médecin,
   RH), SLA prioritaire. Contact : `support@piighost.example`.
