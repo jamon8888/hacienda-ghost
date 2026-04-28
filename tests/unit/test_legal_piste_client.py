@@ -98,3 +98,31 @@ def test_list_tools_returns_metadata(httpx_mock):
     with PisteClient(token="x") as c:
         tools = c.list_tools()
     assert tools == [{"name": "rechercher_code", "description": "…"}]
+
+
+def test_request_error_retries_then_succeeds(httpx_mock, monkeypatch):
+    """Transient connection failures retry up to max_retries."""
+    sleeps = []
+    monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
+
+    # First two attempts: ConnectError; third: success
+    httpx_mock.add_exception(httpx.ConnectError("name resolution failed"))
+    httpx_mock.add_exception(httpx.ConnectError("name resolution failed"))
+    httpx_mock.add_response(text=_sse({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}))
+
+    with PisteClient(token="x", max_retries=3) as c:
+        result = c.call_tool("rechercher_code", {})
+    assert result == {"ok": True}
+    assert len(sleeps) == 2  # two retries with backoff
+
+
+def test_request_error_exhausts_retries_then_raises(httpx_mock, monkeypatch):
+    """After exhausting retries on RequestError, the exception bubbles."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    # Initial attempt + max_retries (3) = 4 connection failures
+    for _ in range(4):
+        httpx_mock.add_exception(httpx.ConnectError("DNS down"))
+
+    with PisteClient(token="x", max_retries=3) as c:
+        with pytest.raises(httpx.RequestError):
+            c.call_tool("rechercher_code", {})

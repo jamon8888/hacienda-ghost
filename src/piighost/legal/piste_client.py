@@ -91,8 +91,13 @@ class PisteClient:
             try:
                 resp = self._client.post(self._url, json=body, headers=self._headers)
             except httpx.RequestError as exc:
-                # Connection failures don't retry — daemon should
-                # surface UNKNOWN_NETWORK quickly.
+                # Transient: DNS / conn reset / timeout. Retry with the
+                # same backoff schedule as 429.
+                if attempt < self._max_retries:
+                    attempt += 1
+                    delay = 0.5 * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                    time.sleep(delay)
+                    continue
                 raise
             if resp.status_code == 429 and attempt < self._max_retries:
                 attempt += 1
