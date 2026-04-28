@@ -1,344 +1,316 @@
-# PIIGhost
+# Hacienda Ghost
 
-[![CI](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml/badge.svg)](https://github.com/Athroniaeth/piighost/actions/workflows/ci.yml)
-![Python Version from PEP 621 TOML](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FAthroniaeth%2Fpiighost%2Fmaster%2Fpyproject.toml)
-[![PyPI version](https://img.shields.io/pypi/v/piighost.svg)](https://pypi.org/project/piighost/)
-[![Docs](https://img.shields.io/badge/docs-online-blue.svg)](https://athroniaeth.github.io/piighost/)
-[![Tested with pytest](https://img.shields.io/badge/tests-pytest-informational.svg)](https://pytest.org/)
-[![Deps: uv](https://img.shields.io/badge/deps-managed%20with%20uv-3E4DD8.svg)](https://docs.astral.sh/uv/)
-[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-4B32C3.svg)](https://docs.astral.sh/ruff/)
-[![Security: bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
+> Recherche dans vos documents, confidentielle, pour avocats, notaires,
+> médecins et professions réglementées — directement dans Claude Desktop.
 
-[README EN](README.md) - [README FR](README.fr.md)
+Hacienda Ghost combine un moteur d'anonymisation local (`piighost`) et
+un plugin Cowork (`hacienda`) pour que votre travail avec Claude
+Desktop ne fasse jamais sortir vos données clients vers le cloud.
 
-`piighost` is a Python library that detects PII (personally identifiable information), extracts them, applies corrections, and automatically anonymizes and deanonymizes sensitive entities (names, locations, etc.). With modules for bidirectional anonymization in AI agent conversations, it integrates via a LangChain middleware without modifying your existing agent code.
-
-## Objectives
-
-Companies using third-party hosted LLMs (GPT, Claude, Gemini) risk transmitting their users' sensitive data to those
-providers. Relying solely on providers with inference servers located in Europe (Mistral AI, OVHcloud, Scaleway) offers
-a legal guarantee, but not a technical one. You could switch from proprietary models to self-hosted open-source
-alternatives, but that requires the infrastructure and accepting a step back from the state of the art.
-
-`piighost` answers this trade-off: anonymize PII before they reach the LLM, keep using the most capable models, and
-restore real values to the end user, without the LLM or the hosting provider ever seeing them.
-
-Existing solutions (Presidio, spaCy extensions, regex) cover detection and anonymization, but they:
-
-- do not link different occurrences of the same entity together
-- do not handle overlapping spans or conflicts between multiple NER models
-- do not tolerate entity variants (case differences, typos, partial mentions), leading to inconsistent placeholders or data leaks
-- leave the developer responsible for orchestrating the conversational case: placeholder persistence across messages, tool call anonymization/deanonymization, etc.
-
-`piighost` builds a layer on top of NER models to handle this entire cycle via a **bidirectional LangChain middleware**
-and **per-thread conversation memory**.
-
-## Use cases
-
-Concrete scenarios where `piighost` fits naturally:
-
-- **Customer support chatbot** sending ticket content to a third-party LLM without leaking customer names, emails, or account numbers
-- **Internal HR RAG** over documents containing employee names, salaries, or evaluation notes
-- **Legal assistant** processing contracts with client and counterparty names
-- **Batch email summarization** pipelines that should not transmit the sender or recipient identity
-- **Tool-enabled agents** with CRM access or email-send capability, where the LLM only sees placeholders and tools receive the real values
-
-## Features
-
-- **Detection**: Detect PII with NER models, algorithms, and build your custom configuration with our detector composition component
-- **Span resolution**: Resolve overlapping or nested detected spans to guarantee clean, non-redundant entities, especially when using multiple detectors
-- **Entity linking**: Link different detections together, enabling typo tolerance and catching mentions that an NER model might miss
-- **Entity resolution**: Resolve linked entity conflicts (e.g., one detector links A and B, another links B and C) to guarantee coherent final entities
-- **Anonymization**: Anonymize detected entities with customizable placeholders (e.g., `<<PERSON_1>>`, `<<LOCATION_1>>`) to protect privacy while preserving text structure. A cache system remembers the applied anonymization and can reverse it for deanonymization
-- **Placeholder Factory**: Create custom placeholders for anonymization, with flexible naming strategies (counters, UUID, etc.) to fit your specific needs
-- **Middleware**: Easily integrate `piighost` into your LangChain agents for transparent anonymization before and after model calls, without modifying your existing agent code
-
-## Weaknesses
-
-There is no perfect PII anonymization pipeline. There are only pipelines tuned for a given situation, and every mechanism in `piighost` fixes some undesired behaviours at the cost of introducing others. Knowing which trade-offs are in effect for your use case is part of the integration work.
-
-- **Entity linking amplifies NER mistakes.** After the NER detector detects a name, the entity linker (`ExactEntityLinker` by default) scans the rest of the text (and of the conversation) to catch missed occurrences. If the initial detection was wrong, the linker spreads that wrong detection across every match. Example: `Rose` is correctly detected as a first name in one message; later, the word `rose` as in the flower is captured by the same entity and anonymized as a person. The linker has no global context. Mitigation: swap in a narrower detector such as the exact-match detector (`ExactMatchDetector`) or a pattern-based one (`RegexDetector`) when you need deterministic control, or disable cross-message linking by instantiating a fresh thread per message.
-- **Fuzzy resolution can over-merge.** The fuzzy entity conflict resolver (`FuzzyEntityConflictResolver`) uses Jaro-Winkler similarity to link misspellings (`Patric` to `Patrick`). On short or similar names (`Marin` vs `Martin`, `Lee` vs `Leo`), the same mechanism merges distinct people into one placeholder. Mitigation: raise the similarity threshold, or fall back to the exact-match resolver (`MergeEntityConflictResolver`, the default).
-
-Before deploying, review which stage of the pipeline you actually need: every detector, linker, or resolver you remove gets rid of the undesired behaviours it caused, but also brings back the ones it was fixing. See [Architecture](docs/en/architecture.md) and [Extending PIIGhost](docs/en/extending.md) for the extension points.
-
-## Installation
-
-### Basic installation
-
-This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
-
-```bash
-uv add piighost
-uv pip install piighost
-```
-
-The core package has no required dependencies. Install extras for the features you need:
-
-```bash
-uv add 'piighost[cache]'        # AnonymizationPipeline (aiocache)
-uv add 'piighost[gliner2]'      # Gliner2Detector
-uv add 'piighost[middleware]'   # PIIAnonymizationMiddleware (langchain + aiocache)
-uv add 'piighost[all]'          # Everything
-```
-
-### Compatibility
-
-| Python | LangChain (extra `langchain`) | aiocache (extra `cache`) | GLiNER2 (extra `gliner2`) |
-|--------|-------------------------------|--------------------------|---------------------------|
-| >=3.10 | >=1.2                         | >=0.12                   | >=1.2                     |
-
-Versions are declared in [`pyproject.toml`](pyproject.toml). `piighost` is tested on Python 3.10 through 3.14.
-
-### Development installation
-
-Clone the repository and install with dev dependencies:
-
-```bash
-git clone https://github.com/Athroniaeth/piighost.git
-cd piighost
-uv sync
-```
-
-### Makefile helpers
-
-Run the full lint suite with the provided Makefile:
-
-```bash
-make lint
-```
-
-This runs Ruff (format + lint) and PyReFly (type-check) through `uv run`.
-
-## Quick start
-
-### Minimal example
-
-No model download, no inference, just a fixed dictionary matched by word-boundary regex. Ideal to try `piighost` in under a minute.
-
-```python
-import asyncio
-
-from piighost import Anonymizer, ExactMatchDetector
-from piighost.pipeline import AnonymizationPipeline
-
-detector = ExactMatchDetector([("Patrick", "PERSON"), ("Paris", "LOCATION")])
-pipeline = AnonymizationPipeline(detector=detector, anonymizer=Anonymizer())
-
-
-async def main():
-    anonymized, _ = await pipeline.anonymize("Patrick lives in Paris.")
-    print(anonymized)  # <<PERSON_1>> lives in <<LOCATION_1>>.
-
-
-asyncio.run(main())
-```
-
-### Standalone pipeline with GLiNER2
-
-Real NER detection. Downloads the GLiNER2 model from HuggingFace on first use.
-
-```python
-import asyncio
-
-from piighost.anonymizer import Anonymizer
-from piighost.detector.gliner2 import Gliner2Detector
-from piighost.pipeline import AnonymizationPipeline
-
-from gliner2 import GLiNER2
-
-model = GLiNER2.from_pretrained("fastino/gliner2-multi-v1")
-detector = Gliner2Detector(model=model, labels=["PERSON", "LOCATION"])
-pipeline = AnonymizationPipeline(detector=detector, anonymizer=Anonymizer())
-
-
-async def main():
-    text = "Patrick lives in Paris. Patrick loves Paris."
-    anonymized, entities = await pipeline.anonymize(text)
-    print(anonymized)
-    # <<PERSON_1>> lives in <<LOCATION_1>>. <<PERSON_1>> loves <<LOCATION_1>>.
-
-    original, _ = await pipeline.deanonymize(anonymized)
-    print(original)
-    # Patrick lives in Paris. Patrick loves Paris.
-
-
-asyncio.run(main())
-```
-
-### With LangChain middleware
-
-A LangChain middleware is an extension point that runs before and after every LLM call and every tool call. `piighost` hooks into it to intercept and transform messages, so PII anonymization is applied without changing your agent code.
-
-```python
-from langchain.agents import create_agent
-from langchain_core.tools import tool
-
-from piighost.anonymizer import Anonymizer
-from piighost.detector.gliner2 import Gliner2Detector
-from piighost.pipeline import ThreadAnonymizationPipeline
-from piighost.middleware import PIIAnonymizationMiddleware
-
-from gliner2 import GLiNER2
-
-
-@tool
-def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email to a given address."""
-    return f"Email successfully sent to {to}."
-
-
-model = GLiNER2.from_pretrained("fastino/gliner2-multi-v1")
-detector = Gliner2Detector(model=model, labels=["PERSON", "LOCATION"])
-pipeline = ThreadAnonymizationPipeline(detector=detector, anonymizer=Anonymizer())
-middleware = PIIAnonymizationMiddleware(pipeline=pipeline)
-
-graph = create_agent(
-    model="openai:gpt-5.4",
-    system_prompt="You are a helpful assistant.",
-    tools=[send_email],
-    middleware=[middleware],
-)
-```
-
-The middleware intercepts every agent turn the LLM only sees anonymized text, tools receive real values, and user-facing messages are deanonymized automatically.
-
-### Pipeline components
-
-The pipeline runs 5 stages. Only `detector` and `anonymizer` are required; the others have sensible defaults:
-
-| Stage | Default | Role | Without it |
-|-------|---------|------|------------|
-| **Detect** | *(required)* | Finds PII spans via NER | - |
-| **Resolve Spans** | `ConfidenceSpanConflictResolver` | Deduplicates overlapping detections (keeps highest confidence) | Overlapping spans from multiple detectors cause garbled replacements |
-| **Link Entities** | `ExactEntityLinker` | Finds all occurrences of each entity via word-boundary regex | Only NER-detected mentions are anonymized; other occurrences leak through |
-| **Resolve Entities** | `MergeEntityConflictResolver` | Merges entity groups that share a mention (union-find) | Same entity could get two different placeholders |
-| **Anonymize** | *(required)* | Replaces entities with placeholders (`<<PERSON_1>>`) | - |
-
-Each stage is a **protocol**: swap any default for your own implementation.
-
-## How it works
-
-### Anonymization pipeline
-
-```mermaid
 ---
-title: "piighost AnonymizationPipeline.anonymize() flow"
----
-flowchart LR
-    classDef stage fill:#90CAF9,stroke:#1565C0,color:#000
-    classDef protocol fill:#FFF9C4,stroke:#F9A825,color:#000
-    classDef data fill:#A5D6A7,stroke:#2E7D32,color:#000
 
-    INPUT(["`**Input text**
-    _'Patrick lives in Paris.
-    Patrick loves Paris.'_`"]):::data
+## Ce que ça fait pour vous
 
-    DETECT["`**1. Detect**
-    _AnyDetector_`"]:::stage
-    RESOLVE_SPANS["`**2. Resolve Spans**
-    _AnySpanConflictResolver_`"]:::stage
-    LINK["`**3. Link Entities**
-    _AnyEntityLinker_`"]:::stage
-    RESOLVE_ENTITIES["`**4. Resolve Entities**
-    _AnyEntityConflictResolver_`"]:::stage
-    ANONYMIZE["`**5. Anonymize**
-    _AnyAnonymizer_`"]:::stage
+Hacienda Ghost ajoute quatre capacités à Claude Desktop, sans que vos
+données quittent votre poste :
 
-    OUTPUT(["`**Output**
-    _'<<PERSON_1>> lives in <<LOCATION_1>>.
-    <<PERSON_1>> loves <<LOCATION_1>>.'_`"]):::data
+- **Recherche dans vos dossiers clients.** Indexation locale d'un
+  dossier complet (PDF, Word, Excel, CSV, e-mails, notes). Les
+  réponses de Claude citent les fichiers d'origine, sans transmettre
+  les noms, IBAN, ou adresses au cloud.
+- **Registre RGPD Art. 30 généré en une commande.** Le registre des
+  activités de traitement, conforme aux exigences CNIL, prêt à
+  signer en PDF.
+- **Screening DPIA Art. 35 automatique.** Détecte si une étude
+  d'impact complète est requise, et pré-remplit les champs pour
+  l'outil officiel CNIL PIA.
+- **Vérification de vos citations juridiques.** Articles, lois,
+  décrets, jurisprudences contrôlés contre les sources Legifrance
+  officielles. Détection des références fausses ou abrogées.
 
-    INPUT --> DETECT
-    DETECT -- "list[Detection]" --> RESOLVE_SPANS
-    RESOLVE_SPANS -- "deduplicated detections" --> LINK
-    LINK -- "list[Entity]" --> RESOLVE_ENTITIES
-    RESOLVE_ENTITIES -- "merged entities" --> ANONYMIZE
-    ANONYMIZE --> OUTPUT
+## Garantie de confidentialité
 
-    P_DETECT["`GlinerDetector
-    _(GLiNER2 NER)_`"]:::protocol
-    P_RESOLVE_SPANS["`ConfidenceSpanConflictResolver
-    _(highest confidence wins)_`"]:::protocol
-    P_LINK["`ExactEntityLinker
-    _(word-boundary regex)_`"]:::protocol
-    P_RESOLVE_ENTITIES["`MergeEntityConflictResolver
-    _(union-find merge)_`"]:::protocol
-    P_ANONYMIZE["`Anonymizer + CounterPlaceholderFactory
-    _(<<LABEL_N>> tags)_`"]:::protocol
+- **Reste sur votre poste :** noms, IBAN, numéros de sécurité sociale,
+  adresses, l'intégralité de vos documents. Tout est chiffré sur
+  disque.
+- **Sort vers Claude :** uniquement les questions anonymisées. Les
+  noms deviennent `<<nom_personne:abc123>>`, les emails
+  `<<email:def456>>`, etc.
+- **Ne sort jamais :** les valeurs originales. Le journal d'audit
+  par session enregistre chaque échange et vous permet de vérifier
+  ce qui a été envoyé.
 
-    P_DETECT -. "implements" .-> DETECT
-    P_RESOLVE_SPANS -. "implements" .-> RESOLVE_SPANS
-    P_LINK -. "implements" .-> LINK
-    P_RESOLVE_ENTITIES -. "implements" .-> RESOLVE_ENTITIES
-    P_ANONYMIZE -. "implements" .-> ANONYMIZE
+Pour la vérification de citations juridiques (optionnelle), seules les
+références juridiques anonymisées sont envoyées à Legifrance — jamais
+le contenu de vos dossiers.
+
+## Prérequis
+
+- macOS, Windows ou Linux récent
+- [Claude Desktop](https://claude.ai/download) installé
+- Un terminal ouvert (Terminal sur macOS / Linux, PowerShell sur Windows)
+
+## Installation en 4 étapes
+
+### Étape 1 — Installer `uv`
+
+`uv` est le gestionnaire d'environnement Python qui orchestrera
+l'installation. Une seule ligne par système d'exploitation.
+
+**macOS / Linux :**
+```
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Each stage uses a **protocol** (structural subtyping) swap `GlinerDetector` for spaCy, a remote API, or an `ExactMatchDetector` for tests. Same for every other stage.
-
-### Middleware integration
-
-```mermaid
----
-title: "piighost PIIAnonymizationMiddleware in an agent loop"
----
-sequenceDiagram
-    participant U as User
-    participant M as Middleware
-    participant L as LLM
-    participant T as Tool
-
-    U->>M: "Send an email to Patrick in Paris"
-    M->>M: abefore_model()<br/>NER detect + anonymize
-    M->>L: "Send an email to <<PERSON_1>> in <<LOCATION_1>>"
-    L->>M: tool_call(send_email, to=<<PERSON_1>>)
-    M->>M: awrap_tool_call()<br/>deanonymize args
-    M->>T: send_email(to="Patrick")
-    T->>M: "Email sent to Patrick"
-    M->>M: awrap_tool_call()<br/>reanonymize result
-    M->>L: "Email sent to <<PERSON_1>>"
-    L->>M: "Done! Email sent to <<PERSON_1>>."
-    M->>M: aafter_model()<br/>deanonymize for user
-    M->>U: "Done! Email sent to Patrick."
+**Windows (PowerShell) :**
+```
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-## Limitations
-
-`piighost` is not a silver bullet. Known limitations to keep in mind before deploying:
-
-- **Language coverage** depends on the GLiNER2 model you load. Check the model card before assuming a language works.
-- **NER false negatives** are inherent. For critical entities (emails, phone numbers, IDs), combine `GlinerDetector` with a regex detector via `CompositeDetector`.
-- **PII generated by the LLM in its responses** (entities never seen in the input) are not covered by entity linking. Handle them with a post-response validation step at the application layer.
-- **Cache is local** (in-memory via `aiocache`). Multi-instance deployments need an external backend (Redis, Memcached) configured explicitly.
-- **Latency overhead is not yet benchmarked**. Plan a measurement pass for your own workload before sizing production traffic.
-
-See [docs/en/architecture.md](docs/en/architecture.md) and [docs/en/extending.md](docs/en/extending.md) for mitigation strategies.
-
-## Development
-
-```bash
-uv sync                      # Install dependencies
-make lint                    # Format (ruff), lint (ruff), type-check (pyrefly)
-uv run pytest                # Run all tests
-uv run pytest tests/ -k "test_name"  # Run a single test
+Vérifiez l'installation :
+```
+uv --version
 ```
 
-## Contributing
+Vous devez voir une ligne du type :
+```
+uv 0.10.2
+```
 
-- **Commits**: Conventional Commits via Commitizen (`feat:`, `fix:`, `refactor:`, etc.)
-- **Type checking**: PyReFly (not mypy)
-- **Formatting/linting**: Ruff
-- **Package manager**: uv (not pip)
-- **Python**: 3.10+
+Si la commande n'est pas reconnue, fermez et rouvrez votre terminal.
 
-## Ecosystem
+### Étape 2 — Installer le moteur Hacienda Ghost
 
-- **[piighost-api](https://github.com/Athroniaeth/piighost-api)**: REST API server for PII anonymization inference. Loads a piighost pipeline once server-side and exposes anonymize/deanonymize via HTTP, so clients only need a lightweight HTTP client instead of embedding the NER model.
-- **[piighost-chat](https://github.com/Athroniaeth/piighost-chat)**: Demo chat app showcasing privacy-preserving AI conversations. Uses `PIIAnonymizationMiddleware` with LangChain to anonymize messages before the LLM and deanonymize responses transparently. Built with SvelteKit, Litestar, and Docker Compose.
+Dans le terminal, copiez-collez :
 
-## Additional notes
+```
+uvx --from piighost piighost install --mode=mcp-only
+```
 
-- The GLiNER2 model is downloaded from HuggingFace on first use (~500 MB)
-- All data models are frozen dataclasses safe to share across threads
-- Tests use `ExactMatchDetector` to avoid loading the real GLiNER2 model in CI
-- For the threat model, what `piighost` protects against and what it does not, and cache storage considerations, see [SECURITY.md](SECURITY.md)
+Un assistant interactif vous pose **quatre questions** :
+
+1. *Mode d'installation* — choisissez `2) MCP-only`.
+2. *Clients à enregistrer* — sélectionnez Claude Desktop et/ou Claude
+   Code (la coche `[✓]` indique ceux qui sont détectés sur votre
+   poste).
+3. *Emplacement du coffre-fort* — laissez la valeur par défaut
+   (`~/.piighost/`).
+4. *Moteur de recherche sémantique* — choisissez `local`.
+
+L'assistant affiche ensuite une revue de l'installation et demande
+confirmation. Validez par `y`. L'installation prend 3 à 5 minutes
+(téléchargement des modèles inclus).
+
+À la fin, vous voyez :
+
+```
+piighost install — terminé.
+  ✓ Moteur installé
+  ✓ Claude Desktop configuré
+  ✓ Modèles téléchargés
+```
+
+### Étape 3 — Installer le plugin Cowork
+
+Toujours dans le terminal :
+
+```
+claude plugins add jamon8888/hacienda
+```
+
+Cette commande fonctionne pour Claude Desktop **et** Claude Code (le
+plugin est partagé via `~/.claude/plugins/`). Vous voyez :
+
+```
+Plugin 'hacienda' installed (v0.8.0)
+```
+
+### Étape 4 — Redémarrer Claude Desktop
+
+Quittez complètement Claude Desktop (sur macOS : `⌘Q`, pas seulement
+fermer la fenêtre), puis rouvrez l'application.
+
+**Vérification :** dans la zone de saisie, tapez `/hacienda`. La
+liste des commandes Hacienda Ghost doit apparaître :
+
+```
+/hacienda:setup
+/hacienda:rgpd:registre
+/hacienda:rgpd:dpia
+/hacienda:rgpd:access
+/hacienda:rgpd:forget
+/hacienda:legal:setup
+/hacienda:legal:verify
+/hacienda:search
+/hacienda:audit
+/hacienda:status
+/hacienda:index
+```
+
+Si aucune commande n'apparaît, voyez la section *Que faire si…* en
+bas de ce document.
+
+## Premier usage en 3 étapes
+
+### Étape A — Configurer votre cabinet
+
+Dans Claude Desktop, lancez :
+
+```
+/hacienda:setup
+```
+
+Le wizard vous pose 6 questions en 2 minutes :
+
+1. Profession (avocat / notaire / médecin / EC / RH)
+2. Identité du cabinet (nom, adresse, pays)
+3. Numéro d'inscription ordinale (numéro de barreau, RPPS, etc.)
+4. DPO (oui / non / inconnu)
+5. Finalités habituelles (pré-remplies par profession, modifiables)
+6. Durée de conservation par défaut
+
+À la fin :
+
+```
+✅ Profil cabinet enregistré
+
+Cabinet         : Cabinet Dupont & Associés
+Profession      : avocat
+N° Numéro de barreau (CNB) : Barreau de Paris #12345
+DPO             : Marie Dupont
+Finalités       : 3
+Conservation    : 5 ans (Art. 2224 Code civil)
+```
+
+Le profil est stocké dans `~/.piighost/controller.toml` et vous pouvez
+le modifier à tout moment en relançant la commande.
+
+### Étape B — Ouvrir un dossier client dans Cowork
+
+Dans Claude Desktop, ouvrez un dossier client via *File → Open Folder*
+(ou glissez-déposez le dossier sur la fenêtre Cowork).
+
+Hacienda Ghost démarre automatiquement l'indexation. Une étiquette
+de statut apparaît dans la barre Cowork :
+
+```
+Hacienda Ghost · Indexation en cours… (3/14 documents)
+```
+
+Quand l'indexation est terminée :
+
+```
+Hacienda Ghost · 14 documents indexés · Prêt
+```
+
+L'indexation typique d'un dossier de 14 fichiers prend 1 à 2 minutes
+(PDF, Word, Excel, CSV, e-mails sont tous supportés).
+
+### Étape C — Générer votre Registre Art. 30
+
+Toujours dans Claude Desktop, lancez :
+
+```
+/hacienda:rgpd:registre
+```
+
+Hacienda Ghost analyse le contenu indexé, détecte les catégories de
+données personnelles, et génère le registre :
+
+```
+📋 Registre Art. 30 généré
+
+Cabinet : Cabinet Dupont & Associés
+Profession : avocat
+Catégories de données : 16
+Catégories sensibles (Art. 9) : 1 (condamnation_penale)
+Documents inventoriés : 14
+
+À compléter manuellement :
+- Coordonnées du DPO : à vérifier
+- Liste exhaustive des sous-traitants : à compléter
+- Mesures de sécurité spécifiques : à valider
+
+Fichier généré : ~/.piighost/exports/<projet>-registre-<date>.md
+```
+
+Le fichier Markdown est lisible directement, ou peut être converti en
+PDF via votre éditeur Markdown préféré pour signature.
+
+**Première victoire : votre cabinet a un registre conforme RGPD en
+~10 minutes après l'installation.**
+
+## Toutes les commandes
+
+| Commande                  | Quand l'utiliser                              |
+|---------------------------|-----------------------------------------------|
+| `/hacienda:setup`         | Configurer ou modifier le profil cabinet     |
+| `/hacienda:rgpd:registre` | Générer le registre Art. 30                  |
+| `/hacienda:rgpd:dpia`     | Screening DPIA Art. 35                       |
+| `/hacienda:rgpd:access`   | Réponse à une demande Art. 15                |
+| `/hacienda:rgpd:forget`   | Droit à l'oubli Art. 17 (avec aperçu)        |
+| `/hacienda:legal:setup`   | Activer la vérification Legifrance           |
+| `/hacienda:legal:verify`  | Vérifier les citations juridiques d'un texte |
+| `/hacienda:search`        | Recherche fédérée (vos docs + Legifrance)    |
+| `/hacienda:audit`         | Journal d'audit de la session                |
+| `/hacienda:status`        | État de l'index du dossier ouvert            |
+| `/hacienda:index`         | Forcer la ré-indexation du dossier           |
+
+## Que faire si…
+
+**Aucune commande `/hacienda:*` n'apparaît après le redémarrage.**
+Vérifiez que le plugin est bien installé : dans le terminal,
+`claude plugins list` doit faire apparaître `hacienda` dans la liste.
+Si oui, relancez Claude Desktop avec un quit complet (`⌘Q` sur
+macOS).
+
+**L'indexation est très lente sur un dossier réseau.**
+Les lecteurs réseau (SMB, CIFS) sont scrutés toutes les 10 minutes.
+Pour forcer une mise à jour immédiate, utilisez `/hacienda:index`.
+
+**J'ai changé d'avis et je veux désinstaller.**
+Dans le terminal :
+```
+claude plugins remove hacienda
+uv tool uninstall piighost
+rm -rf ~/.piighost
+```
+
+**J'ai un problème avec un dossier en particulier.**
+La commande `/hacienda:status` affiche les erreurs d'indexation par
+fichier. Si un fichier ne peut pas être indexé (PDF protégé, format
+non supporté), il est listé avec la cause.
+
+## Sécurité et confidentialité
+
+- **Coffre-fort local chiffré.** Vos données vivent dans
+  `~/.piighost/projects/<dossier>/vault.db`, chiffrées AES-256-GCM.
+  La clé est dans `~/.piighost/vault.key`.
+- **Profil cabinet en clair.** `~/.piighost/controller.toml` contient
+  votre profil cabinet (nom, adresse, profession). Pas de donnée
+  client. Lisible.
+- **Journal d'audit par session.** Chaque échange avec Claude est
+  enregistré dans `~/.piighost/sessions/<id>.audit.jsonl`. Tapez
+  `/hacienda:audit` pour le consulter dans Claude Desktop.
+- **Aucune donnée envoyée à Anthropic.** Les requêtes vers Claude
+  contiennent uniquement les étiquettes anonymisées
+  (`<<nom_personne:abc123>>`). Le journal d'audit liste tous les
+  appels sortants.
+- **Vérification optionnelle Legifrance.** Si activée via
+  `/hacienda:legal:setup`, seules les références juridiques
+  anonymisées sont envoyées — jamais le contenu de vos dossiers.
+
+## Support
+
+- **Issues GitHub :**
+  [github.com/jamon8888/piighost/issues](https://github.com/jamon8888/piighost/issues)
+- **Contrats de support payants :** formation cabinet (demi-journée
+  à distance), profils profession spécialisés (notaire, médecin,
+  RH), SLA prioritaire. Contact : `support@piighost.example`.
+- **Documentation développeur :** voir `docs/` dans le dépôt pour
+  les détails techniques (architecture, plans d'évolution, journaux
+  de followup).
+
+## Licence
+
+MIT. Voir [LICENSE](LICENSE).
