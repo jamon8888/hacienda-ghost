@@ -157,7 +157,20 @@ No image directory is created. Text-only is a deliberate v1 choice (see *Non-goa
 
 | Path | Action | Reason |
 |---|---|---|
-| `README.md` | **Deleted** (`git rm` in plugin's own `.git`) | The main piighost README is canonical; the plugin doesn't need its own user-facing README. `plugin.json.description` already advertises capabilities to Claude Desktop. |
+| `README.md` | **Replaced** (French rewrite, short form) | The plugin repo is browsable on GitHub at `github.com/jamon8888/hacienda` — visitors landing there need a French overview. Form: short (~50 lines), redirects to the main piighost README for install/first-use details. Same vouvoiement + jargon-hiding rules. Avoid duplicating the install steps; link to them. |
+
+**Plugin README outline (short form):**
+
+| § | Title | Length |
+|---|---|---|
+| 1 | Hacienda — le plugin Cowork de Hacienda Ghost | ~3 lines |
+| 2 | Ce qu'apporte ce plugin | 4 bullets (slash commands by namespace) |
+| 3 | Installation | 2 lines + link to main README |
+| 4 | Commandes disponibles | Same table as main README §7 |
+| 5 | Sécurité et confidentialité | 2 lines + link to main README §9 |
+| 6 | Licence | 1 line |
+
+The plugin README intentionally NEVER duplicates the main README's install steps — it links to them. If the install procedure changes, only the main README needs an update.
 
 ### Out of scope (does NOT change)
 
@@ -191,11 +204,16 @@ docs: rewrite README for non-technical Hacienda Ghost users
 **2. plugin worktree (`main` branch of hacienda repo):**
 
 ```
-docs: remove plugin-local README; main piighost README is canonical
+docs: French short-form plugin README (Hacienda Ghost)
 
-The Hacienda Ghost README in the piighost repo now covers the plugin
-install + first-use walkthrough end to end. Cowork discovers plugins
-via plugin.json, not README, so this deletion is purely a cleanup.
+Replaces the bilingual dev-flavored plugin README with a focused
+French overview. Form: ~50 lines, vouvoiement, redirects all
+install/first-use details to the main piighost README to avoid
+duplication. Same jargon-hiding rules as the main README.
+
+Audience: GitHub visitors landing directly at github.com/jamon8888/
+hacienda. Cowork itself only reads plugin.json so this is purely
+a documentation surface.
 ```
 
 ---
@@ -208,7 +226,7 @@ via plugin.json, not README, so this deletion is purely a cleanup.
 | User runs `claude plugins add jamon8888/hacienda` before installing piighost | Plugin's slash commands politely refuse with "le moteur Hacienda Ghost n'est pas installé" (the existing skills already handle missing-MCP gracefully). README §5 is ordered piighost → plugin to avoid this. |
 | User skips the `/hacienda:setup` wizard and goes directly to `/hacienda:rgpd:registre` | Wizard's pre-flight check refuses politely with "Configurez d'abord via /hacienda:setup". README mentions this in §6 step A. |
 | PyPI auto-translation of French README is poor for non-French dev users | Acceptable. Bundle naming was confirmed as Option 2: PyPI is not the primary user surface. |
-| Plugin worktree README deletion breaks something we forgot | Cowork only reads `plugin.json` (verified). Worth one line in the plugin commit message. |
+| Plugin README drifts from main README (install steps duplicated) | Plugin README intentionally NEVER duplicates install steps — only links to the main README §5. Single source of truth. |
 | Without screenshots, install step "I see something different" creates confusion | Each terminal step ships an *expected-output block* showing what to see. Differs from screenshots by being copy-paste-friendly text. Maintenance cost: zero (the prose is the canonical version). |
 
 ---
@@ -230,9 +248,10 @@ The README ships when:
 
 | Step | Effort |
 |---|---|
-| Draft full README in French (~5 screens) | 2 h |
+| Draft main README in French (~5 screens) | 2 h |
+| Draft plugin short-form README in French (~50 lines) | 30 min |
 | Capture expected-output samples by re-running the smoke + interactive installer (--dry-run mode for the install assistant, real outputs for first-use steps) | 30 min |
-| Self-review pass (vouvoiement, jargon-hiding, code-block sanity, command name accuracy, install step ordering, plugin-install verified on Desktop + Code targets) | 30 min |
+| Self-review pass on both READMEs (vouvoiement, jargon-hiding, code-block sanity, command name accuracy, install step ordering, plugin-install verified on Desktop + Code targets, no duplicated install steps between the two READMEs) | 30 min |
 | Volunteer test on a clean machine (optional but recommended) | 30 min |
 | Cleanup commits in both repos + push | 15 min |
-| **Total** | **~3.5 h (half a working day)** |
+| **Total** | **~4 h (half a working day)** |
