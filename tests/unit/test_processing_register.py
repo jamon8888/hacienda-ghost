@@ -203,6 +203,74 @@ def test_register_data_subjects_rh_uses_salaries(vault_dir, monkeypatch):
     asyncio.run(svc.close())
 
 
+def test_register_data_subjects_entity_tokens_mapped_to_coarse_categories(vault_dir, monkeypatch):
+    """Real GLiNER2 emits <<nom_personne:HASH>> / <<organisation:HASH>>
+    tokens in parties_json. Those must be classified as 'personnes
+    physiques' / 'personnes morales', not surfaced as opaque hashes.
+
+    Closes the data_subjects-readability gap surfaced by the GLiNER2
+    e2e smoke against piighost-test-multi-format.
+    """
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("subjects-entity-tokens"))
+    proj = asyncio.run(svc._get_project("subjects-entity-tokens"))
+
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="contrat",
+            parties=[
+                "<<nom_personne:abc12345>>",
+                "<<prenom:def67890>>",
+                "<<organisation:11111111>>",
+                "<<organisation:22222222>>",  # dedup at category level
+            ],
+            dossier_id="dossier-acme",
+            extracted_at=1700000000,
+        ),
+    )
+
+    register = asyncio.run(svc.processing_register(project="subjects-entity-tokens"))
+    subjects = set(register.data_subject_categories)
+    # nom_personne + prenom collapse to one category
+    assert "personnes physiques" in subjects
+    # organisation × 2 collapses to one category
+    assert "personnes morales" in subjects
+    # Opaque hashes must NOT appear in the user-facing output
+    for s in subjects:
+        assert "<<" not in s, f"opaque token leaked: {s}"
+        assert ":" not in s or s in ("personnes physiques", "personnes morales"), s
+    asyncio.run(svc.close())
+
+
+def test_register_data_subjects_unknown_entity_label_surfaces_label(vault_dir, monkeypatch):
+    """Unknown entity labels surface the label (not the hash) for the
+    avocat to review."""
+    svc = _svc(vault_dir, monkeypatch)
+    asyncio.run(svc.create_project("subjects-unknown-entity"))
+    proj = asyncio.run(svc._get_project("subjects-unknown-entity"))
+
+    from piighost.service.models import DocumentMetadata
+    proj._indexing_store.upsert_document_meta(
+        proj._project_name,
+        DocumentMetadata(
+            doc_id="doc-1",
+            doc_type="autre",
+            parties=["<<robot_agent:99999999>>"],
+            dossier_id="dossier-sci-fi",
+            extracted_at=1700000000,
+        ),
+    )
+    register = asyncio.run(svc.processing_register(project="subjects-unknown-entity"))
+    subjects = set(register.data_subject_categories)
+    # The bare label surfaces, not the full token with the hash
+    assert "robot_agent" in subjects
+    assert "<<robot_agent:99999999>>" not in subjects
+    asyncio.run(svc.close())
+
+
 def test_register_data_subjects_unknown_label_surfaces_as_is(vault_dir, monkeypatch):
     """An unrecognized parties label is preserved verbatim, not silently dropped.
 

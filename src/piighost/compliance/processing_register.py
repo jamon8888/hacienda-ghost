@@ -10,6 +10,7 @@ Doesn't write anything except the audit event 'registre_generated'.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -162,6 +163,16 @@ def _count_by(items, attr: str) -> dict[str, int]:
 
 # Map raw party labels (as they appear in documents_meta.parties_json)
 # to the user-facing data-subject category emitted in the registre.
+#
+# Two input shapes are recognised:
+#   - ROLE labels (Phase 6 design): "client", "salarie", "tiers". These
+#     would only be emitted by a future role-classifier. Map directly.
+#   - ENTITY-TYPE tokens (current Phase 8 reality): "<<nom_personne:HASH8>>",
+#     "<<organisation:HASH8>>", "<<prenom:HASH8>>". The indexer's GLiNER2
+#     extractor produces these via LabelHashPlaceholderFactory. We don't
+#     know whether a given person is a client / avocat / tiers, so we
+#     map the entity LABEL to a coarse category ("personnes physiques"
+#     for any individual, "personnes morales" for organisations).
 _PARTY_LABEL_MAP = {
     "client": "clients",
     "clients": "clients",
@@ -178,13 +189,34 @@ _PARTY_LABEL_MAP = {
     "fournisseur": "fournisseurs",
 }
 
+# Map the LABEL portion of an entity-type token to a coarse user-facing
+# data-subject category. Used when parties_json contains tokens like
+# "<<nom_personne:HASH8>>" rather than role labels.
+_ENTITY_LABEL_TO_SUBJECT: dict[str, str] = {
+    # Individuals
+    "nom_personne": "personnes physiques",
+    "prenom": "personnes physiques",
+    "PERSON": "personnes physiques",
+    "PER": "personnes physiques",
+    # Organisations
+    "organisation": "personnes morales",
+    "ORG": "personnes morales",
+}
+
+# Match ``<<label:HASH>>`` and capture the label.
+_ENTITY_TOKEN_RE = re.compile(r"^<<([a-zA-Z_]+):[a-f0-9]+>>$")
+
 
 def _classify_data_subjects(docs_meta, profession: str) -> list[str]:
     """Return the data-subject categories for the registre.
 
     Strategy (in order):
-      1. Aggregate ``parties_json`` across all indexed documents and map
-         each unique label to a user-facing category via ``_PARTY_LABEL_MAP``.
+      1. Aggregate ``parties_json`` across all indexed documents:
+         - Role-label tokens (``client``, ``salarie``, ...) → mapped via
+           ``_PARTY_LABEL_MAP`` to the user-facing category.
+         - Entity-type tokens (``<<nom_personne:HASH>>``, ``<<organisation:HASH>>``,
+           ...) → label portion mapped via ``_ENTITY_LABEL_TO_SUBJECT`` to
+           a coarse category ("personnes physiques" / "personnes morales").
          This is the data-driven path — what the indexer actually saw.
       2. If parties_json is empty across the project, fall back to the
          project-name heuristic (dossier_id starts with 'client'/'dossier'/
@@ -193,16 +225,31 @@ def _classify_data_subjects(docs_meta, profession: str) -> list[str]:
          ('clients du cabinet' for avocat, 'salariés' for rh, 'clients'
          otherwise).
 
-    The mapping is deliberately conservative — unknown party labels are
-    surfaced as-is so the avocat sees them and can correct the registre
-    manually rather than have piighost silently invent a category.
+    The mapping is deliberately conservative — labels we don't recognise
+    are surfaced as-is (the bare label, not the opaque token) so the
+    avocat sees them and can correct the registre manually rather than
+    have piighost silently invent a category.
     """
     subjects: set[str] = set()
 
     # Path 1: data-driven from parties_json
     for m in docs_meta:
         for raw in m.parties or ():
-            key = raw.strip().lower()
+            stripped = raw.strip()
+            entity_match = _ENTITY_TOKEN_RE.match(stripped)
+            if entity_match:
+                # Entity-type token: <<label:HASH8>>
+                label = entity_match.group(1)
+                mapped = _ENTITY_LABEL_TO_SUBJECT.get(label)
+                if mapped:
+                    subjects.add(mapped)
+                elif label:
+                    # Unknown entity label — surface the label (not the hash)
+                    # so the registre stays human-readable.
+                    subjects.add(label)
+                continue
+            # Role-label path (Phase 6 design)
+            key = stripped.lower()
             mapped = _PARTY_LABEL_MAP.get(key)
             if mapped:
                 subjects.add(mapped)
