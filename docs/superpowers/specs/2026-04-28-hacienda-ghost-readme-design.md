@@ -21,7 +21,7 @@ This document specifies the rewrite of the piighost project's user-facing README
 - An English README. Audience is French-speaking; PyPI's auto-translation handles non-French dev visitors.
 - Coverage of the proxy install mode. Deferred — the README explicitly omits `--mode=full` and the ANTHROPIC_BASE_URL hijacking story.
 - Developer/contributor documentation. Separate `CONTRIBUTING.md` or `docs/dev.md` is out of scope.
-- GIFs or animated content. v1 is text + 4 PNG screenshots only.
+- Visuals of any kind. v1 is text-only — no GIFs, no screenshots, no diagrams. Captured imagery drifts on every minor release and adds maintenance cost; the prose is responsible for being clear without leaning on screenshots.
 
 ---
 
@@ -37,7 +37,7 @@ This document specifies the rewrite of the piighost project's user-facing README
 
 ## Document structure (locked)
 
-11 sections, ~6 screens of vertical scroll, 4 PNG screenshots:
+11 sections, ~5 screens of vertical scroll, text-only:
 
 | § | Title | Length | Includes |
 |---|---|---|---|
@@ -45,8 +45,8 @@ This document specifies the rewrite of the piighost project's user-facing README
 | 2 | Ce que ça fait pour vous | ~10 lines | 4 capability bullets |
 | 3 | Garantie de confidentialité | ~5 lines | What stays local / what goes outbound / what never leaves |
 | 4 | Prérequis | 3 bullets | OS, Claude Desktop, terminal access |
-| 5 | Installation en 4 étapes | ~30 lines + 1 screenshot | Numbered steps, paste-and-go |
-| 6 | Premier usage en 3 étapes | ~30 lines + 3 screenshots | Wizard → indexing → registre PDF |
+| 5 | Installation en 4 étapes | ~30 lines | Numbered steps, paste-and-go, expected output samples |
+| 6 | Premier usage en 3 étapes | ~30 lines | Wizard → indexing → registre — described in prose with sample dialogue snippets |
 | 7 | Toutes les commandes | 1 table (~12 rows) | Slash commands quick reference |
 | 8 | Que faire si… | ~20 lines | 4 troubleshooting Q&As |
 | 9 | Sécurité et confidentialité | ~10 lines | File locations, encryption, audit log |
@@ -54,6 +54,46 @@ This document specifies the rewrite of the piighost project's user-facing README
 | 11 | Licence | 1 line | MIT |
 
 The full outline detail (with sample prose for §2 and §5.2) is in Brainstorming Section 1.
+
+**Compensating prose technique.** Without screenshots, the install and first-use sections rely on **expected-output blocks** — code blocks that show what the user should see in their terminal or in Claude's reply, so they can confirm visually that they're on track. Sample form for §5 step 2:
+
+```
+[piighost install] Vérification de l'environnement…
+[piighost install] ✓ Python 3.13 détecté
+[piighost install] ✓ Espace disque suffisant (12.4 GB libres)
+[piighost install] ✓ Connexion internet
+[piighost install] Téléchargement des modèles… (3-5 min)
+```
+
+The prose then says: *"Lorsque vous voyez la dernière ligne, le moteur est prêt."*
+
+### §5 — Detailed install steps
+
+The 4 install steps in §5 are pinned here so the README writer doesn't have to re-litigate ordering decisions:
+
+**Étape 1 — Installer `uv` (gestionnaire Python).**
+- macOS / Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- Vérification: `uv --version` doit afficher un numéro de version.
+
+**Étape 2 — Installer le moteur Hacienda Ghost.**
+- Commande unique: `uvx --from piighost piighost install --mode=mcp-only`
+- Assistant interactif: 4 prompts (mode / clients à enregistrer / coffre-fort / moteur de recherche sémantique).
+- L'assistant détecte automatiquement Claude Desktop ET Claude Code s'ils sont présents et propose de les enregistrer tous les deux. Le lecteur peut choisir l'un ou l'autre, ou les deux.
+- Durée: 3 à 5 minutes (téléchargement des modèles inclus).
+
+**Étape 3 — Installer le plugin Cowork (Hacienda).**
+- Pour Claude Desktop: `claude plugins add jamon8888/hacienda`
+- Pour Claude Code: la même commande fonctionne (Cowork est partagé entre Desktop et Code via `~/.claude/plugins/`).
+- Vérification: la commande affiche `Plugin 'hacienda' installed (v0.8.0)`.
+- Le README mentionne explicitement les deux cibles ("dans Claude Desktop *et/ou* dans Claude Code") — l'auto-détection à l'étape 2 a déjà câblé le moteur dans les deux ; cette étape ajoute les commandes `/hacienda:*` à la palette.
+
+**Étape 4 — Redémarrer Claude Desktop (ou Claude Code).**
+- Quitter complètement (pas seulement fermer la fenêtre — sur macOS, ⌘Q).
+- Rouvrir.
+- Vérification: taper `/hacienda` dans la zone de saisie doit faire apparaître la liste des commandes (`/hacienda:setup`, `/hacienda:rgpd:registre`, etc.).
+
+If `/hacienda:*` doesn't appear in the slash menu after restart, the troubleshooting section §8 covers the four most likely causes: plugin not enabled, plugin manifest version mismatch, Cowork cache stale, MCP server not registered (re-run Step 2).
 
 ---
 
@@ -110,18 +150,8 @@ These are part of the avocat's daily vocabulary and removing them would be patro
 |---|---|---|
 | `README.md` | **Replaced** (full content rewrite in French) | GitHub primary, PyPI links here, single canonical entry point |
 | `README.fr.md` | **Deleted** (`git rm`) | Content folded into new `README.md` |
-| `docs/images/readme/install-wizard.png` | **Created** | Screenshot 1 — install assistant at review screen |
-| `docs/images/readme/setup-wizard.png` | **Created** | Screenshot 2 — `/hacienda:setup` mid-conversation in Claude Desktop |
-| `docs/images/readme/cowork-status-chip.png` | **Created** | Screenshot 3 — Cowork status chip "14 docs indexés" |
-| `docs/images/readme/registre-art30.png` | **Created** | Screenshot 4 — rendered Art. 30 PDF first page (avocat-flavored header visible) |
 
-The 4 screenshots are capturable from existing infrastructure:
-- Install assistant: `uvx --from piighost piighost install --mode=mcp-only --dry-run` in a Windows Terminal
-- Setup wizard: walk through Step 1–6 in Claude Desktop with the daemon running
-- Cowork status chip: any indexed folder produces it; the multi-format corpus from earlier smoke tests works
-- Art. 30 PDF: render an existing `processing_register` output via `render_compliance_doc(profile="avocat", format="pdf")`
-
-All four are 30 minutes total to capture once the daemon is running.
+No image directory is created. Text-only is a deliberate v1 choice (see *Non-goals*). If the screenshots story comes back in a future iteration, `docs/images/readme/` is the path to use.
 
 ### plugin worktree (`.worktrees/hacienda-plugin`)
 
@@ -151,10 +181,11 @@ docs: rewrite README for non-technical Hacienda Ghost users
 - Replace README.md with French content for regulated professionals
   (avocats, notaires, médecins, experts-comptables, RH).
 - Delete README.fr.md (folded into the single canonical README.md).
-- Add 4 PNG screenshots under docs/images/readme/.
 - Brand bundle naming: "Hacienda Ghost" for user-facing copy;
   internal package names (piighost, hacienda plugin) unchanged.
 - Focus on MCP + plugin install path; --mode=full (proxy) deferred.
+- Text-only — no screenshots in v1 (compensated by expected-output
+  code blocks throughout install + first-use sections).
 ```
 
 **2. plugin worktree (`main` branch of hacienda repo):**
@@ -173,11 +204,12 @@ via plugin.json, not README, so this deletion is purely a cleanup.
 
 | Risk | Mitigation |
 |---|---|
-| Screenshots drift from reality on each release | Capture them last, after a `git tag v0.8.0`. Re-capture on each minor bump. Worth ~30 min/release. |
 | `uvx --from piighost piighost install` doesn't work on a clean Windows machine without `uv` | The README's Step 1 installs `uv`. Verified that `uv install` script works on Windows PowerShell. Add a "Si la commande n'est pas reconnue, redémarrez le terminal" note. |
+| User runs `claude plugins add jamon8888/hacienda` before installing piighost | Plugin's slash commands politely refuse with "le moteur Hacienda Ghost n'est pas installé" (the existing skills already handle missing-MCP gracefully). README §5 is ordered piighost → plugin to avoid this. |
 | User skips the `/hacienda:setup` wizard and goes directly to `/hacienda:rgpd:registre` | Wizard's pre-flight check refuses politely with "Configurez d'abord via /hacienda:setup". README mentions this in §6 step A. |
 | PyPI auto-translation of French README is poor for non-French dev users | Acceptable. Bundle naming was confirmed as Option 2: PyPI is not the primary user surface. |
 | Plugin worktree README deletion breaks something we forgot | Cowork only reads `plugin.json` (verified). Worth one line in the plugin commit message. |
+| Without screenshots, install step "I see something different" creates confusion | Each terminal step ships an *expected-output block* showing what to see. Differs from screenshots by being copy-paste-friendly text. Maintenance cost: zero (the prose is the canonical version). |
 
 ---
 
@@ -186,10 +218,11 @@ via plugin.json, not README, so this deletion is purely a cleanup.
 The README ships when:
 
 1. A French-speaking avocat unfamiliar with Python can install Hacienda Ghost in ≤ 10 minutes following the README literally — verified by one volunteer test.
-2. The 4 screenshots match the actual UX on a clean machine — verified by re-capturing them at release.
-3. The 12 slash commands in §7 all match what the plugin v0.8.0 actually exposes — verified by `git -C .worktrees/hacienda-plugin ls-files skills/`.
-4. Vouvoiement consistency check — zero "tu" in the body (excluding code samples).
-5. Jargon-hiding consistency check — zero occurrences of "MCP", "vault", "embedder", "RAG", "GLiNER2", "BM25" in the user-facing prose (the table in §9 may legitimately mention chiffrement; technical terms allowed only inside code blocks).
+2. The 12 slash commands in §7 all match what the plugin v0.8.0 actually exposes — verified by `git -C .worktrees/hacienda-plugin ls-files skills/`.
+3. Vouvoiement consistency check — zero "tu" in the body (excluding code samples).
+4. Jargon-hiding consistency check — zero occurrences of "MCP", "vault", "embedder", "RAG", "GLiNER2", "BM25" in the user-facing prose (the table in §9 may legitimately mention chiffrement; technical terms allowed only inside code blocks).
+5. The 4 install steps in §5 + 3 first-use steps in §6 are reproducible verbatim — every command, env var, and expected-output block is real (verified by re-running the smoke against the multi-format corpus).
+6. Plugin install command (`claude plugins add jamon8888/hacienda`) verified against both Cowork-in-Claude-Desktop and Cowork-in-Claude-Code targets.
 
 ---
 
@@ -197,9 +230,9 @@ The README ships when:
 
 | Step | Effort |
 |---|---|
-| Capture 4 screenshots | 30 min |
-| Draft full README in French (~6 screens) | 2 h |
-| Self-review pass (vouvoiement, jargon-hiding, code-block sanity, command name accuracy) | 30 min |
+| Draft full README in French (~5 screens) | 2 h |
+| Capture expected-output samples by re-running the smoke + interactive installer (--dry-run mode for the install assistant, real outputs for first-use steps) | 30 min |
+| Self-review pass (vouvoiement, jargon-hiding, code-block sanity, command name accuracy, install step ordering, plugin-install verified on Desktop + Code targets) | 30 min |
 | Volunteer test on a clean machine (optional but recommended) | 30 min |
 | Cleanup commits in both repos + push | 15 min |
 | **Total** | **~3.5 h (half a working day)** |
