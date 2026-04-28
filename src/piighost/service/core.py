@@ -1435,6 +1435,18 @@ class PIIGhostService:
             {"search": query, "max_results": max_results},
             ttl_seconds=300,  # 5 min for freeform
         )
+        # Error from _legal_call: surface a 1-item sentinel rather than
+        # silently returning []. The skill can show "OpenLégi error: …"
+        # instead of "no results found".
+        if isinstance(result, dict) and "error" in result:
+            return [{
+                "source": "_error",
+                "title": f"OpenLégi error ({result.get('category', 'unknown')})",
+                "snippet": str(result["error"])[:200],
+                "url": None,
+                "score": None,
+                "category": result.get("category", "unknown"),
+            }]
         if isinstance(result, dict) and "hits" in result:
             return [
                 {"source": source, "title": h.get("title", ""),

@@ -254,3 +254,60 @@ def test_legal_cache_clear_on_empty_returns_zero(vault_dir, monkeypatch):
     result = asyncio.run(svc.legal_cache_clear())
     assert result == {"removed": 0}
     asyncio.run(svc.close())
+
+
+def test_legal_search_distinguishes_error_from_empty(vault_dir, monkeypatch):
+    """An OpenLégi error must produce a structured error dict, not [].
+
+    Empty hits → []
+    Auth/network error → [{"source": "_error", "title": "...", ...}]
+    """
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("expired-token")
+
+    def handler(request):
+        return httpx.Response(401, text="unauthorized")
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    hits = asyncio.run(svc.legal_search(query="x", source="code"))
+    # NOT empty list — should be a 1-item list with the error sentinel
+    assert len(hits) == 1
+    assert hits[0]["source"] == "_error"
+    assert hits[0].get("category") == "auth"
+    assert "title" in hits[0]
+    asyncio.run(svc.close())
+
+
+def test_legal_search_empty_hits_returns_plain_empty(vault_dir, monkeypatch):
+    """200 OK with hits=[] still returns []."""
+    import json
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("ok-token")
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            text=_sse({"jsonrpc": "2.0", "id": 1, "result": {"hits": []}}),
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    hits = asyncio.run(svc.legal_search(query="x", source="code"))
+    assert hits == []
+    asyncio.run(svc.close())
