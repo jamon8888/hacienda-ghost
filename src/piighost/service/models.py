@@ -168,6 +168,8 @@ class DocumentMetadata(BaseModel):
 
 class SubjectDocumentRef(BaseModel):
     """One document reference in a subject_access or forget report."""
+    model_config = ConfigDict(extra="forbid")
+
     doc_id: str
     file_name: str
     file_path: str
@@ -180,6 +182,8 @@ class SubjectDocumentRef(BaseModel):
 
 class SubjectExcerpt(BaseModel):
     """Redacted excerpt where the subject appears."""
+    model_config = ConfigDict(extra="forbid")
+
     doc_id: str
     file_name: str
     chunk_index: int
@@ -235,6 +239,8 @@ class ForgetReport(BaseModel):
 
 class ControllerInfo(BaseModel):
     """Identity of the data controller (cabinet / structure)."""
+    model_config = ConfigDict(extra="forbid")
+
     name: str = ""
     profession: str = ""
     bar_or_order_number: str = ""
@@ -244,6 +250,8 @@ class ControllerInfo(BaseModel):
 
 class DPOInfo(BaseModel):
     """Designated Data Protection Officer."""
+    model_config = ConfigDict(extra="forbid")
+
     name: str = ""
     email: str = ""
     phone: str = ""
@@ -251,6 +259,8 @@ class DPOInfo(BaseModel):
 
 class DataCategoryItem(BaseModel):
     """One row of the registre's 'categories of data' table."""
+    model_config = ConfigDict(extra="forbid")
+
     label: str
     count: int
     sensitive: bool = False
@@ -258,12 +268,16 @@ class DataCategoryItem(BaseModel):
 
 class RetentionItem(BaseModel):
     """One retention rule applied to a category of doc/data."""
+    model_config = ConfigDict(extra="forbid")
+
     category: str
     duration: str
 
 
 class TransferItem(BaseModel):
     """One identified transfer of data outside the EU."""
+    model_config = ConfigDict(extra="forbid")
+
     destination: str
     recipient: str = ""
     legal_mechanism: str = ""
@@ -271,12 +285,16 @@ class TransferItem(BaseModel):
 
 class SecurityMeasureItem(BaseModel):
     """One technical/organisational security measure."""
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     auto_detected: bool = False
 
 
 class DocumentsSummary(BaseModel):
     """Aggregate counts for the documents_meta inventory."""
+    model_config = ConfigDict(extra="forbid")
+
     total_docs: int = 0
     by_doc_type: dict[str, int] = Field(default_factory=dict)
     by_language: dict[str, int] = Field(default_factory=dict)
@@ -285,6 +303,8 @@ class DocumentsSummary(BaseModel):
 
 class ManualFieldHint(BaseModel):
     """A field the avocat must fill manually, with a hint."""
+    model_config = ConfigDict(extra="forbid")
+
     field: str
     hint: str
 
@@ -340,6 +360,8 @@ class ProcessingRegister(BaseModel):
 
 class DPIATrigger(BaseModel):
     """One Art. 35.3 or CNIL trigger detected for this project."""
+    model_config = ConfigDict(extra="forbid")
+
     code: str
     name: str
     matched_evidence: list[str] = Field(default_factory=list)
@@ -348,6 +370,8 @@ class DPIATrigger(BaseModel):
 
 class CNILPIAInputs(BaseModel):
     """Pre-filled inputs for the official CNIL PIA software."""
+    model_config = ConfigDict(extra="forbid")
+
     processing_name: str = ""
     processing_description: str = ""
     data_categories: list[str] = Field(default_factory=list)
