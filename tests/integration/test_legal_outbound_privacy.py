@@ -167,3 +167,57 @@ def test_legal_outbound_redactor_strips_placeholder_format(vault_dir, monkeypatc
     assert "1240" in serialized
 
     asyncio.run(svc.close())
+
+
+def test_legal_outbound_real_anonymize_redacts_pii(vault_dir, monkeypatch):
+    """Without the patched_redactor fixture — proves _legal_call's
+    OWN anonymize wiring redacts PII (closes I-1).
+
+    Uses the real default-project anonymize (with stub detector for
+    determinism in tests). Stub detector recognizes a small set of
+    test fixtures including 'Alice' (PERSON) and 'Paris' (LOC).
+    """
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            text=_sse({"jsonrpc": "2.0", "id": 1, "result": {"hits": []}}),
+            headers={"Content-Type": "text/event-stream"},
+        )
+
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    CredentialsService().set_openlegi_token("test-token")
+    cfg = ServiceConfig(
+        reranker=RerankerSection(backend="none"),
+        openlegi=OpenLegiSection(enabled=True),
+    )
+    svc = asyncio.run(PIIGhostService.create(vault_dir=vault_dir, config=cfg))
+
+    # Use a name the stub detector knows ("Alice") — query also has
+    # legal grammar ("article 1240") that must survive.
+    asyncio.run(svc.legal_search(
+        query="Alice habite à Paris et invoque l'article 1240 du Code civil",
+        source="code",
+    ))
+
+    assert len(captured) == 1
+    serialized = json.dumps(captured[0])
+    # Stub detector tags "Alice" / "Paris" — those should be replaced
+    # with <<label:HASH>> placeholders by anonymize, then stripped by
+    # the redactor.
+    assert "Alice" not in serialized
+    assert "Paris" not in serialized
+    # Legal grammar survives the anonymize pass (no PII labels for
+    # article numbers + code names)
+    assert "1240" in serialized
+    assert "Code civil" in serialized
+
+    asyncio.run(svc.close())

@@ -1460,8 +1460,8 @@ class PIIGhostService:
         return "code"  # default for ambiguous queries
 
     async def _legal_call(self, tool: str, args: dict, *, ttl_seconds: int) -> dict:
-        """Cache → redact → PisteClient → cache the response. The single
-        outbound choke point."""
+        """Cache → pre-anonymize → redact placeholders → PisteClient → cache.
+        The single outbound choke point."""
         from piighost.legal import LegalCache, OutboundRedactor, PisteClient
         from piighost.service.credentials import CredentialsService
         from pathlib import Path
@@ -1473,22 +1473,26 @@ class PIIGhostService:
 
         cache = LegalCache(vault_dir=cache_dir)
         try:
-            hit = cache.get(tool, args)
+            # Pre-anonymize string args via the default project's real
+            # anonymizer (GLiNER2 + LoRA when configured). The redactor
+            # then strips <<label:HASH>> placeholders that anonymize
+            # produced. This closes the production-vs-test-stub gap
+            # flagged in Phase 9 final review (I-1).
+            anonymized_args = await self._anonymize_args_for_outbound(args)
+
+            hit = cache.get(tool, anonymized_args)
             if hit is not None:
                 return hit
 
-            # OutboundRedactor expects a sync callable; v1 uses a no-op
-            # sync wrapper. The placeholder regex stripper in
-            # OutboundRedactor.redact() still fires (handles the
-            # <<label:HASH>> tokens). Skill is expected to pre-anonymize
-            # via mcp__piighost__anonymize_text before passing real PII.
-            # See Task 9 for the full privacy-gate test.
-            def _sync_anon(text: str) -> str:
+            # The redactor's role is now just to strip our own placeholder
+            # format and apply any defense-in-depth secondary anonymization.
+            # Pre-anonymization above is the primary boundary.
+            def _noop(text: str) -> str:
                 return text
 
-            redactor = OutboundRedactor(anonymize_fn=_sync_anon)
+            redactor = OutboundRedactor(anonymize_fn=_noop)
             try:
-                redacted_args = redactor.redact_dict(args)
+                redacted_args = redactor.redact_dict(anonymized_args)
             except Exception as exc:
                 return {"error": f"redactor failed: {exc}"}
 
@@ -1503,10 +1507,41 @@ class PIIGhostService:
             except Exception as exc:
                 return {"error": str(exc)}
 
-            cache.set(tool, args, response=response, ttl_seconds=ttl_seconds)
+            cache.set(tool, anonymized_args, response=response, ttl_seconds=ttl_seconds)
             return response
         finally:
             cache.close()
+
+    async def _anonymize_args_for_outbound(self, args: dict) -> dict:
+        """Pre-anonymize string values in *args* via the default project's
+        real anonymizer. Recurses into nested dicts/lists. Non-string
+        values pass through.
+
+        The default project's anonymize covers everything detect/anonymize
+        would catch — names, emails, phones, IBANs, SSNs — replacing each
+        with the standard <<label:HASH>> placeholder. The OutboundRedactor
+        then strips those placeholders downstream.
+        """
+        project = await self._get_project("default", auto_create=True)
+
+        async def _anonymize_value(v):
+            if isinstance(v, str) and v:
+                try:
+                    result = await project.anonymize(v)
+                    return result.anonymized
+                except Exception:
+                    # If anonymize crashes on this specific input,
+                    # fall back to scrubbing to "[REDACTED]" rather than
+                    # sending raw. We never proceed with un-anonymized
+                    # text on this path.
+                    return "[REDACTED]"
+            if isinstance(v, dict):
+                return {k: await _anonymize_value(vv) for k, vv in v.items()}
+            if isinstance(v, list):
+                return [await _anonymize_value(item) for item in v]
+            return v
+
+        return await _anonymize_value(args)
 
     def _classify_response(self, ref, response) -> dict:
         """Map OpenLégi response to VerificationResult. Trivial v1: presence
