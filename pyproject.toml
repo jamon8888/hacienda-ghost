@@ -123,6 +123,11 @@ compliance = [
 all = [
     "piighost[gliner2,langchain,faker,cache,client,spacy,transformers,llm,mcp,index,proxy,forward]",
 ]
+test = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-httpx>=0.30",
+]
 
 [build-system]
 requires = ["hatchling"]
