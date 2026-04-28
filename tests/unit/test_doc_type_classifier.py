@@ -25,6 +25,30 @@ def test_filename_invoices(filename):
     assert conf >= 0.85
 
 
+# Plural forms — caught from real GLiNER2 e2e smoke against
+# piighost-test-multi-format/client*/invoices.txt and contracts.{pdf,jsonl}.
+# The trailing lookahead (?![a-zA-Z]) used to fail on the plural 's'.
+@pytest.mark.parametrize("filename,expected", [
+    ("invoices.txt", "facture"),
+    ("invoices.csv", "facture"),
+    ("contracts.pdf", "contrat"),
+    ("contracts.jsonl", "contrat"),
+    ("Contrats.docx", "contrat"),
+    ("factures-2026.xlsx", "facture"),
+    ("attestations.pdf", "attestation"),
+    ("notes.md", "note_interne"),
+    ("courriers.docx", "courrier"),
+    ("letters.eml", "email"),  # .eml extension wins
+    ("jugements.pdf", "jugement"),
+    ("memos.txt", "note_interne"),
+])
+def test_filename_plural_forms(filename, expected):
+    """Real-corpus filenames use plural forms; classifier must handle them."""
+    label, conf = classify(filename, "")
+    assert label == expected, f"{filename} → {label} (expected {expected})"
+    assert conf > 0.0
+
+
 @pytest.mark.parametrize("filename", ["mail_2024.eml", "message.msg", "email-bonjour.eml"])
 def test_filename_emails(filename):
     label, conf = classify(filename, "")

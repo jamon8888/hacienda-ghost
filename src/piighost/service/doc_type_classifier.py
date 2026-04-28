@@ -26,24 +26,32 @@ DocType = Literal[
 # NOTE: We use (?<![a-zA-Z]) / (?![a-zA-Z]) instead of \b because
 # filenames use underscores as word separators, and underscore IS a
 # \w character so \b does not fire between a letter and '_'.
+#
+# Trailing optional ``s?`` handles plural forms (``invoices``,
+# ``contracts``, ``factures``, etc.) — caught from real e2e smoke
+# against piighost-test-multi-format/{client1,client2}/invoices.txt
+# and contracts.{pdf,jsonl}. The plural ``s`` is followed by a
+# non-letter (separator or extension), so the (?![a-zA-Z]) lookahead
+# still fires correctly. ``acte``/``notari`` keep their existing form
+# (their morphology doesn't pluralize the same way).
 _FILENAME_PATTERNS: tuple[tuple[re.Pattern[str], DocType, float], ...] = (
     (re.compile(r"\.(eml|msg)$", re.I),
      "email",              0.95),
-    (re.compile(r"(?<![a-zA-Z])(contract|contrat|sla|nda|mou)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(contract|contrat|sla|nda|mou)s?(?![a-zA-Z])", re.I),
      "contrat",            0.90),
-    (re.compile(r"(?<![a-zA-Z])(invoice|facture|fac)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(invoice|facture|fac)s?(?![a-zA-Z])", re.I),
      "facture",            0.90),
-    (re.compile(r"(?<![a-zA-Z])(cv|resume|curriculum)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(cv|resume|curriculum)s?(?![a-zA-Z])", re.I),
      "cv",                 0.85),
-    (re.compile(r"(?<![a-zA-Z])(courrier|letter|lettre)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(courrier|letter|lettre)s?(?![a-zA-Z])", re.I),
      "courrier",           0.85),
     (re.compile(r"(?<![a-zA-Z])(acte|notari)(?![a-zA-Z])", re.I),
      "acte_notarie",       0.80),
-    (re.compile(r"(?<![a-zA-Z])(jugement|judgment|arret|arrêt)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(jugement|judgment|arret|arrêt)s?(?![a-zA-Z])", re.I),
      "jugement",           0.85),
-    (re.compile(r"(?<![a-zA-Z])(attestation|certificat)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(attestation|certificat)s?(?![a-zA-Z])", re.I),
      "attestation",        0.80),
-    (re.compile(r"(?<![a-zA-Z])(note|memo)(?![a-zA-Z])", re.I),
+    (re.compile(r"(?<![a-zA-Z])(note|memo)s?(?![a-zA-Z])", re.I),
      "note_interne",       0.70),
 )
 
