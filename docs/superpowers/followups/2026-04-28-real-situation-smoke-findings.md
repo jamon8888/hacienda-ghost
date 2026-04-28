@@ -36,48 +36,44 @@ Every architectural layer was exercised and passed:
 
 ---
 
-## 🔴 1. `pip install piighost` (no extras) cannot index — `lancedb` missing
+## ✅ 1. (RESOLVED on retest) `lancedb` ModuleNotFoundError — dev venv, not manifest
 
-**Repro:** fresh venv, `pip install -e .`, `python -m piighost.daemon --vault ...`, then call `index_path`. Every file fails with:
+**Original suspicion:** `pip install piighost` couldn't index because `lancedb` was missing from base deps.
 
-```
-ModuleNotFoundError: No module named 'lancedb'
-```
+**Actual root cause:** the **dev venv** used to run the smoke was incomplete (set up for tests-only, not a full `pip install -e .`). `pyproject.toml` lines 53-57 already declare `lancedb`, `pyarrow`, `rank-bm25`, `sentence-transformers` as **base dependencies** — a real `pip install piighost` would have brought them in.
 
-**Root cause:** commit `86e247e` ("ship full stack by default") restructured `[project.optional-dependencies]` so the `[index]` extra became an empty alias and its packages moved to base dependencies. But `lancedb` is NOT in the current base `[project.dependencies]` — it was lost in that migration.
+**Verified on retest:** `pip install lancedb` into the dev venv → re-spawn daemon → all 3 fixtures index cleanly with `indexed: 3, errors: []`.
 
-**Effect:** Anyone who follows the README install path (`pip install piighost`) cannot index a single document. The MCP daemon starts, the RGPD tools work for empty projects (registre with `documents.total: 0`, DPIA verdict `dpia_not_required`), but the actual workflow requires `pip install lancedb` separately.
-
-**Fix:** add `lancedb`, `pyarrow`, and `rank-bm25` (and probably `sentence-transformers`) to `[project.dependencies]` in `pyproject.toml`. Verify with:
-
-```bash
-python -m venv /tmp/v && source /tmp/v/bin/activate
-pip install -e .
-python -m piighost.daemon --vault /tmp/vault &
-# wait for handshake
-curl -X POST http://127.0.0.1:$PORT/rpc \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"method":"index_path","params":{"path":"/tmp/sample.txt","project":"default"}}'
-# expect indexed: 1, no errors
-```
-
-Estimated effort: 30 min (deps + verify on a clean venv).
+**Action:** none needed for the manifest. Worth a `tools/dev-bootstrap.sh` script or README note that says "use `uv sync` or `pip install -e .` for the full stack — `pip install pytest` alone won't index."
 
 ---
 
-## 🟡 2. `dateutil` missing for date-parsing in metadata extractor
+## ✅ 2. (RESOLVED on retest) `dateutil` ModuleNotFoundError — same as #1
 
-**Repro:** index a file with a French-format date (e.g. "né le 12 mars 1975" or a French SSN pattern). Fails with:
+**Original suspicion:** `python-dateutil` not in deps.
+
+**Actual root cause:** `python-dateutil` IS in `uv.lock` (transitively via kreuzberg) — verified by grep. The dev venv just didn't have it installed.
+
+**Verified on retest:** `pip install python-dateutil` (force-reinstall to clear the corrupted `~iighost` ghost metadata in the venv) → re-spawn daemon → medical document with French date "né le 12 mars 1975" + French SSN indexes cleanly.
+
+**Action:** none needed.
+
+---
+
+## 🟢 1b. Dev-venv corruption: phantom `~iighost` distribution
+
+While running the smoke, pip emitted repeated warnings:
 
 ```
-ModuleNotFoundError: No module named 'dateutil'
+WARNING: Ignoring invalid distribution ~iighost (...)
+WARNING: Ignoring invalid distribution ~~ighost (...)
 ```
 
-**Effect:** medical / civil-status documents get a per-file index error and aren't persisted to `documents_meta`. The other documents in the same `index_path` call are unaffected.
+The `~iighost` / `~~ighost` directories are leftover partial-install artifacts. They cause `pip install` to silently no-op when the package is "already satisfied" but the import path is broken — what tripped up finding #2 (we had to use `--force-reinstall` to actually land `python-dateutil`).
 
-**Fix options:**
-- Add `python-dateutil>=2.9` to `[project.dependencies]`. (~5 min)
-- Or guard the import in the date parser with `try/except ImportError` and fall back to the stdlib `datetime.fromisoformat` for ISO-only formats. The bundled medical templates use French dates so the dateutil path is needed for médecin profession.
+**Fix:** clean the venv with `rm -rf .venv/Lib/site-packages/~iighost*` (Windows) or recreate with `uv sync` / `python -m venv .venv && pip install -e .`. Capture in a `tools/dev-bootstrap.sh` script.
+
+Estimated effort: 5 min.
 
 Recommend the first (just add the dep) — `python-dateutil` is small and ubiquitous.
 
@@ -161,13 +157,16 @@ Estimated effort: 5 min.
 
 | # | Issue | Status | Resolution |
 |---|---|---|---|
-| 1 | `lancedb` missing from base deps | open | 🔴 fix before next release |
-| 2 | `dateutil` missing | open | 🟡 fix in next maintenance |
+| 1 | ~~`lancedb` missing from base deps~~ | resolved | ✅ retest confirmed lancedb is in pyproject; dev venv was incomplete |
+| 1b | Dev venv has phantom `~iighost` metadata blocking pip installs | open | 🟢 doc + bootstrap script |
+| 2 | ~~`dateutil` missing~~ | resolved | ✅ retest: dateutil in uv.lock, dev venv just lacked it |
 | 3 | `/shutdown` doesn't terminate uvicorn | open | 🟡 |
 | 4 | IndexReport field names undocumented | open | 🟢 |
 | 5 | Error messages compressed at MCP boundary | open | 🟢 |
 | 6 | Stub detector too limited for e2e | open | 🟢 |
 | 7 | `folder_status` Cowork-only nuance undocumented | open | 🟢 |
+
+**Retest verdict:** with a properly-installed venv (lancedb + dateutil present), the smoke runs **clean — 3/3 fixtures indexed, no errors, every layer green**. The MCP+plugin integration is production-ready for the no-ML-models path. Real GLiNER2 detection (still needed to exercise `subject_access`/`forget_subject` end-to-end) is the only uncovered branch.
 
 ---
 
