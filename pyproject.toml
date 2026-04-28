@@ -176,6 +176,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "integration: tests that load heavy optional dependencies (torch, transformers, gliner2, spacy). Deselected by default.",
+    "live: tests that hit real external services (OpenLégi). Gated by RUN_LIVE_OPENLEGI=1 env var.",
 ]
 
 [tool.coverage.report]
