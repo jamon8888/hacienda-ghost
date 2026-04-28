@@ -107,6 +107,13 @@ class IncrementalSection(BaseModel):
     medium_max_bytes: int = 50 * 1024 * 1024       # 50 MB
 
 
+class OpenLegiSection(BaseModel):
+    """Optional OpenLégi (Legifrance) integration."""
+    enabled: bool = False
+    base_url: str = "https://mcp.openlegi.fr"
+    service: Literal["legifrance", "inpi", "eurlex"] = "legifrance"
+
+
 class ServiceConfig(BaseModel):
     schema_version: int = 1
     vault: VaultSection = Field(default_factory=VaultSection)
@@ -117,6 +124,7 @@ class ServiceConfig(BaseModel):
     daemon: DaemonSection = Field(default_factory=DaemonSection)
     safety: SafetySection = Field(default_factory=SafetySection)
     incremental: IncrementalSection = Field(default_factory=IncrementalSection)
+    openlegi: OpenLegiSection = Field(default_factory=OpenLegiSection)
 
     @classmethod
     def from_toml(cls, path: Path) -> "ServiceConfig":

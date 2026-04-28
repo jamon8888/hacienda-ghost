@@ -1341,6 +1341,188 @@ class PIIGhostService:
         from piighost.compliance.profile_loader import load_bundled_profile
         return load_bundled_profile(profession)
 
+    # ---- Legal (OpenLégi) ----------------------------------------------
+
+    async def legal_extract_refs(self, *, text: str) -> list[dict]:
+        """Extract legal references — pure-function, no network."""
+        from piighost.legal import extract_references
+        refs = extract_references(text)
+        return [r.model_dump() for r in refs]
+
+    async def legal_verify_ref(self, *, ref: dict) -> dict:
+        """Verify one legal reference against OpenLégi."""
+        from piighost.legal.reference_models import (
+            LegalReference, VerificationResult, LegalRefType,
+        )
+        if not self._config.openlegi.enabled:
+            return VerificationResult(
+                status="UNKNOWN_OPENLEGI_DISABLED", score=None,
+                message="OpenLégi désactivée — activez via /hacienda:legal:setup",
+            ).model_dump()
+        from piighost.service.credentials import CredentialsService
+        if not CredentialsService().get_openlegi_token():
+            return VerificationResult(
+                status="UNKNOWN_AUTH_FAILED", score=None,
+                message="Token PISTE manquant",
+            ).model_dump()
+
+        ref_obj = LegalReference.model_validate(ref)
+        if ref_obj.ref_type == LegalRefType.ARTICLE_CODE:
+            tool, args = "rechercher_code", {
+                "code_name": ref_obj.code or "Code civil",
+                "search": ref_obj.numero or "",
+                "champ": "NUM_ARTICLE", "max_results": 5,
+            }
+        elif ref_obj.ref_type in (LegalRefType.LOI, LegalRefType.DECRET, LegalRefType.ORDONNANCE):
+            tool, args = "rechercher_dans_texte_legal", {
+                "text_id": ref_obj.text_id or "", "search": "", "max_results": 5,
+            }
+        elif ref_obj.ref_type == LegalRefType.JURISPRUDENCE:
+            tool, args = "rechercher_jurisprudence_judiciaire", {
+                "search": ref_obj.pourvoi or "",
+                "champ": "NUM_AFFAIRE", "max_results": 5,
+            }
+        else:
+            return VerificationResult(
+                status="UNKNOWN_PARSE_ERROR",
+                message=f"Type non supporté: {ref_obj.ref_type}",
+            ).model_dump()
+
+        response = await self._legal_call(tool, args, ttl_seconds=7 * 24 * 3600)
+        if isinstance(response, dict) and "error" in response:
+            return VerificationResult(
+                status="UNKNOWN_NETWORK", message=str(response["error"]),
+            ).model_dump()
+        return self._classify_response(ref_obj, response)
+
+    async def legal_search(
+        self, *, query: str, source: str = "auto", max_results: int = 5,
+    ) -> list[dict]:
+        """Search OpenLégi by source."""
+        if not self._config.openlegi.enabled:
+            return []
+        from piighost.service.credentials import CredentialsService
+        if not CredentialsService().get_openlegi_token():
+            return []
+
+        source_to_tool = {
+            "code": "rechercher_code",
+            "jurisprudence_judiciaire": "rechercher_jurisprudence_judiciaire",
+            "jurisprudence_administrative": "rechercher_jurisprudence_administrative",
+            "cnil": "rechercher_decisions_cnil",
+            "jorf": "recherche_journal_officiel",
+            "lois_decrets": "rechercher_dans_texte_legal",
+            "conventions_collectives": "rechercher_conventions_collectives",
+        }
+        if source == "auto":
+            source = self._auto_route_source(query)
+        tool = source_to_tool.get(source)
+        if not tool:
+            return []
+
+        result = await self._legal_call(
+            tool,
+            {"search": query, "max_results": max_results},
+            ttl_seconds=300,  # 5 min for freeform
+        )
+        if isinstance(result, dict) and "hits" in result:
+            return [
+                {"source": source, "title": h.get("title", ""),
+                 "snippet": h.get("snippet", h.get("contenu", "")),
+                 "url": h.get("url"), "score": h.get("score")}
+                for h in result["hits"]
+            ]
+        return []
+
+    async def legal_passthrough(self, *, tool: str, args: dict) -> dict:
+        """Power-user escape hatch. Still passes through the redactor."""
+        if not self._config.openlegi.enabled:
+            return {"error": "OpenLégi désactivée"}
+        return await self._legal_call(tool, args, ttl_seconds=7 * 24 * 3600)
+
+    async def legal_credentials_set(self, *, token: str) -> dict:
+        """Persist a PISTE token to ~/.piighost/credentials.toml."""
+        from piighost.service.credentials import CredentialsService
+        CredentialsService().set_openlegi_token(token)
+        return {"configured": True}
+
+    @staticmethod
+    def _auto_route_source(query: str) -> str:
+        import re
+        if re.search(r"\d{2}-\d+\.\d+", query):
+            return "jurisprudence_judiciaire"
+        if re.search(r"loi\s+n[°o]?\s*\d", query, re.I):
+            return "lois_decrets"
+        if re.search(r"\bcnil\b", query, re.I):
+            return "cnil"
+        if re.search(r"\barticle\s+\d", query, re.I) or re.search(r"\bcode\s+", query, re.I):
+            return "code"
+        return "code"  # default for ambiguous queries
+
+    async def _legal_call(self, tool: str, args: dict, *, ttl_seconds: int) -> dict:
+        """Cache → redact → PisteClient → cache the response. The single
+        outbound choke point."""
+        from piighost.legal import LegalCache, OutboundRedactor, PisteClient
+        from piighost.service.credentials import CredentialsService
+        from pathlib import Path
+
+        # Cache lives in ~/.piighost/ (shared across projects since
+        # legal references are global).
+        cache_dir = Path.home() / ".piighost"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        cache = LegalCache(vault_dir=cache_dir)
+        try:
+            hit = cache.get(tool, args)
+            if hit is not None:
+                return hit
+
+            # OutboundRedactor expects a sync callable; v1 uses a no-op
+            # sync wrapper. The placeholder regex stripper in
+            # OutboundRedactor.redact() still fires (handles the
+            # <<label:HASH>> tokens). Skill is expected to pre-anonymize
+            # via mcp__piighost__anonymize_text before passing real PII.
+            # See Task 9 for the full privacy-gate test.
+            def _sync_anon(text: str) -> str:
+                return text
+
+            redactor = OutboundRedactor(anonymize_fn=_sync_anon)
+            try:
+                redacted_args = redactor.redact_dict(args)
+            except Exception as exc:
+                return {"error": f"redactor failed: {exc}"}
+
+            token = CredentialsService().get_openlegi_token()
+            try:
+                with PisteClient(
+                    token=token or "",
+                    base_url=self._config.openlegi.base_url,
+                    service=self._config.openlegi.service,
+                ) as client:
+                    response = client.call_tool(tool, redacted_args)
+            except Exception as exc:
+                return {"error": str(exc)}
+
+            cache.set(tool, args, response=response, ttl_seconds=ttl_seconds)
+            return response
+        finally:
+            cache.close()
+
+    def _classify_response(self, ref, response) -> dict:
+        """Map OpenLégi response to VerificationResult. Trivial v1: presence
+        of any hit → VERIFIE_EXACT, else HALLUCINATION. Score 100 vs 0."""
+        from piighost.legal.reference_models import VerificationResult
+        hits = response.get("hits", []) if isinstance(response, dict) else []
+        if hits:
+            return VerificationResult(
+                status="VERIFIE_EXACT", score=100,
+                url_legifrance=hits[0].get("url"),
+            ).model_dump()
+        return VerificationResult(
+            status="HALLUCINATION", score=0,
+            type_erreur="REF_INEXISTANTE",
+        ).model_dump()
+
     async def flush(self) -> None:
         for svc in self._cache.values():
             await svc.flush()
