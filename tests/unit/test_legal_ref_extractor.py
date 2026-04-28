@@ -79,3 +79,29 @@ def test_extract_preserves_position():
     art = refs[0]
     assert art.position >= 9  # after "Bonjour. "
     assert text[art.position : art.position + len("article")].lower() == "article"
+
+
+def test_extract_range_form_articles():
+    """'articles 1240 à 1245 du Code civil' captures both endpoints."""
+    refs = extract_references("Voir les articles 1240 à 1245 du Code civil.")
+    article_refs = [r for r in refs if r.ref_type == LegalRefType.ARTICLE_CODE]
+    assert len(article_refs) >= 2, article_refs
+    numeros = sorted(r.numero for r in article_refs)
+    assert "1240" in numeros and "1245" in numeros
+
+
+def test_extract_article_with_unknown_verb():
+    """An article followed by a verb not in the historical list still extracts."""
+    refs = extract_references("L'article 1240 du Code civil exige une faute.")
+    article_refs = [r for r in refs if r.ref_type == LegalRefType.ARTICLE_CODE]
+    assert len(article_refs) == 1
+    assert article_refs[0].numero == "1240"
+    assert article_refs[0].code == "Code civil"
+
+
+def test_extract_article_followed_by_period_only():
+    """End-of-sentence terminator works."""
+    refs = extract_references("Voir l'article 1240 du Code civil.")
+    article_refs = [r for r in refs if r.ref_type == LegalRefType.ARTICLE_CODE]
+    assert len(article_refs) == 1
+    assert article_refs[0].numero == "1240"

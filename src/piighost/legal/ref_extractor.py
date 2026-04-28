@@ -37,11 +37,22 @@ def _normalize_code(raw: str) -> str:
 
 
 # Regex patterns (compiled once)
+# Single-article form. Extended verb list and clean punctuation fallback
+# (closes Phase 9 review M-6: brittle terminator).
 _RE_ARTICLE_CODE = re.compile(
     r"(?:l')?articles?\s+([LRDA]\.?\s*)?(\d+(?:-\d+)*)"
     r"(?:\s+et\s+(\d+(?:-\d+)*))?"
-    r"\s+du\s+(Code\s+[\w\s'-]+?)"
-    r"(?=\s*[,\.\);]|\s+(?:et|qui|dispose|prévoit|énonce)|\s*$)",
+    r"\s+du\s+(Code\s+(?:de\s+|du\s+|d'|des\s+)?[\w'-]+(?:\s+[\w'-]+){0,4}?)"
+    r"(?=\s*[,\.\);:]|\s+(?:et|ou|qui|dispose|prévoit|énonce|exige|impose|stipule|requiert|précise|prescrit|fixe|établit|interdit|autorise)|\s*$)",
+    re.I,
+)
+
+# Range form: "articles 1240 à 1245 du Code civil"
+# Closes Phase 9 review M-5.
+_RE_ARTICLE_RANGE = re.compile(
+    r"articles?\s+(\d+(?:-\d+)*)\s+à\s+(\d+(?:-\d+)*)"
+    r"\s+du\s+(Code\s+(?:de\s+|du\s+|d'|des\s+)?[\w'-]+(?:\s+[\w'-]+){0,4}?)"
+    r"(?=\s*[,\.\);:]|\s+(?:et|ou)|\s*$)",
     re.I,
 )
 _RE_ART_ABBREV = re.compile(
@@ -86,6 +97,24 @@ def extract_references(text: str) -> list[LegalReference]:
             raw_text=raw_text, position=position, **fields,
         ))
         next_id += 1
+
+    # Articles range form: "articles 1240 à 1245 du Code civil"
+    for m in _RE_ARTICLE_RANGE.finditer(text):
+        code = _normalize_code(m.group(3))
+        start_num = m.group(1)
+        end_num = m.group(2)
+        # Emit start + end as separate refs (the avocat verifies both
+        # endpoints; intermediate articles are implied but not enumerated).
+        _add(
+            LegalRefType.ARTICLE_CODE,
+            raw_text=m.group(0), position=m.start(),
+            numero=start_num, code=code,
+        )
+        _add(
+            LegalRefType.ARTICLE_CODE,
+            raw_text=m.group(0), position=m.start() + 1,  # +1 to keep distinct
+            numero=end_num, code=code,
+        )
 
     # Articles in codes (full form) — also handles "X et Y du Code …"
     for m in _RE_ARTICLE_CODE.finditer(text):
