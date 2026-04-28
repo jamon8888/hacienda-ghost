@@ -49,11 +49,14 @@ async def extract_text(path: Path, *, max_bytes: int = 10_485_760) -> str | None
             return None
         return text.strip() if text and text.strip() else None
     try:
-        import kreuzberg  # optional dep — installed via `[index]` extras
+        import kreuzberg  # base dependency (declared in pyproject.toml)
     except ImportError as exc:
         raise RuntimeError(
-            "extract_text requires the 'index' extras for binary formats; "
-            "install with `pip install piighost[index]`"
+            f"extract_text requires kreuzberg for binary formats "
+            f"(.{path.suffix.lower().lstrip('.')}). "
+            f"kreuzberg is a base dependency — reinstall the package: "
+            f"`pip install -e .` or `uv sync`. The legacy "
+            f"`pip install piighost[index]` extra is now empty."
         ) from exc
     try:
         result = await kreuzberg.extract_file(path)
