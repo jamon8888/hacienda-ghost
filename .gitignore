@@ -183,6 +183,8 @@ sandbox/
 
 # Audit-tmp scratch dir (created during the Phase 5 cleanup)
 _audit_tmp/
+# Smoke test scratch dir
+_smoke_tmp/
 
 # piighost runtime state — vault databases, project registry, daemon
 # state, and BM25 indexes. Never commit these: SQLite WAL/SHM files
