@@ -310,4 +310,14 @@ TOOL_CATALOG: list[ToolSpec] = [
         ),
         timeout_s=5.0,
     ),
+    ToolSpec(
+        name="legal_cache_clear",
+        rpc_method="legal_cache_clear",
+        description=(
+            "Empty the OpenLégi response cache (~/.piighost/legal_cache.sqlite). "
+            "Useful after a CNIL guidance update or when debugging stale "
+            "verification results. Returns {'removed': N}."
+        ),
+        timeout_s=5.0,
+    ),
 ]

@@ -1456,6 +1456,19 @@ class PIIGhostService:
         CredentialsService().set_openlegi_token(token)
         return {"configured": True}
 
+    async def legal_cache_clear(self) -> dict:
+        """Empty the legal-cache SQLite. Returns the count of removed rows."""
+        from piighost.legal import LegalCache
+        from pathlib import Path
+        cache_dir = Path.home() / ".piighost"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache = LegalCache(vault_dir=cache_dir)
+        try:
+            removed = cache.clear()
+        finally:
+            cache.close()
+        return {"removed": removed}
+
     @staticmethod
     def _auto_route_source(query: str) -> str:
         import re

@@ -383,4 +383,6 @@ async def _dispatch(
         )
     if method == "legal_credentials_set":
         return await svc.legal_credentials_set(token=params["token"])
+    if method == "legal_cache_clear":
+        return await svc.legal_cache_clear()
     raise ValueError("Unknown method")

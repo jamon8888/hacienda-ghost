@@ -495,6 +495,11 @@ def _build_mcp(*, vault_dir) -> FastMCP:
             by_name["legal_credentials_set"], params={"token": token},
         )
 
+    @mcp.tool(name="legal_cache_clear",
+              description=by_name["legal_cache_clear"].description)
+    async def legal_cache_clear() -> dict:
+        return await _lazy_dispatch(by_name["legal_cache_clear"], params={})
+
     # ------------------------------------------------------------------
     # RGPD Phase 2 — Registre Art. 30 + DPIA + Render
     # ------------------------------------------------------------------

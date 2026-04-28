@@ -216,3 +216,41 @@ def test_verify_legal_ref_network_error_maps_to_network(vault_dir, monkeypatch):
     }))
     assert result["status"] == "UNKNOWN_NETWORK", result
     asyncio.run(svc.close())
+
+
+def test_legal_cache_clear_returns_count(vault_dir, monkeypatch):
+    """legal_cache_clear empties the cache and returns the row count."""
+    import json
+    import httpx
+    from piighost.service.credentials import CredentialsService
+    CredentialsService().set_openlegi_token("ok-token")
+
+    captured: list = []
+    def handler(request):
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            text=_sse({"jsonrpc": "2.0", "id": 1, "result": {"hits": []}}),
+            headers={"Content-Type": "text/event-stream"},
+        )
+    transport = httpx.MockTransport(handler)
+    _real_client = httpx.Client
+    monkeypatch.setattr(
+        "piighost.legal.piste_client.httpx.Client",
+        lambda **kw: _real_client(transport=transport, **{k: v for k, v in kw.items() if k != "transport"}),
+    )
+
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    asyncio.run(svc.legal_search(query="x", source="code"))
+    asyncio.run(svc.legal_search(query="y", source="cnil"))
+
+    result = asyncio.run(svc.legal_cache_clear())
+    assert result == {"removed": 2}
+    asyncio.run(svc.close())
+
+
+def test_legal_cache_clear_on_empty_returns_zero(vault_dir, monkeypatch):
+    svc = _svc(vault_dir, monkeypatch, openlegi_enabled=True)
+    result = asyncio.run(svc.legal_cache_clear())
+    assert result == {"removed": 0}
+    asyncio.run(svc.close())
